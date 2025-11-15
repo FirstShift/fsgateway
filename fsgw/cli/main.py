@@ -7,10 +7,14 @@ Provides interactive command-line interface for API exploration.
 import asyncio
 import json
 import os
+import sys
 from typing import Any, Optional
 
+import httpx
 import typer
 from rich.console import Console
+from rich.markdown import Markdown
+from rich.panel import Panel
 from rich.table import Table
 
 from fsgw import __version__
@@ -200,6 +204,302 @@ def query(
                 )
 
     asyncio.run(_query())
+
+
+@app.command()
+def entities(
+    scope: Optional[str] = typer.Option(None, "--scope", "-s", help="Filter by scope")
+) -> None:
+    """List all entities, optionally filtered by scope."""
+
+    async def _list_entities() -> None:
+        async with get_client() as client:
+            if scope:
+                entities_list = await client.list_apis_by_scope(scope)
+                title = f"Entities in scope: {scope}"
+            else:
+                entities_list = await client.list_apis()
+                title = "All Entities"
+
+            # Group by scope
+            by_scope: dict[str, list] = {}
+            for entity in entities_list:
+                if entity.api_scope not in by_scope:
+                    by_scope[entity.api_scope] = []
+                by_scope[entity.api_scope].append(entity)
+
+            # Display summary
+            table = Table(title=title)
+            table.add_column("Scope", style="cyan")
+            table.add_column("Count", style="green")
+
+            for scope_name in sorted(by_scope.keys()):
+                table.add_row(scope_name, str(len(by_scope[scope_name])))
+
+            console.print(table)
+            console.print(f"\n[green]Total:[/green] {len(entities_list)} entities")
+
+            # Show entities
+            if scope:
+                console.print(f"\n[bold]{scope} entities:[/bold]\n")
+                for entity in sorted(entities_list, key=lambda x: x.api_url):
+                    desc = f" - {entity.description}" if entity.description else ""
+                    console.print(f"  • [cyan]{entity.api_url}[/cyan]{desc}")
+
+    asyncio.run(_list_entities())
+
+
+@app.command()
+def info(api_url: str) -> None:
+    """Get detailed information about a specific entity."""
+
+    async def _get_info() -> None:
+        async with get_client() as client:
+            try:
+                entity = await client.get_api_info(api_url)
+                metadata = await client.get_metadata(api_url)
+                pk_fields = await client.get_primary_keys(api_url)
+
+                # Entity info panel
+                info_text = f"""
+                **API URL:** {entity.api_url}
+                **Scope:** {entity.api_scope}
+                **Name:** {entity.external_api_name}
+                **Description:** {entity.description or 'N/A'}
+                """
+                console.print(Panel(Markdown(info_text), title="Entity Information"))
+
+                # Metadata table
+                table = Table(title=f"Fields ({len(metadata)} total)")
+                table.add_column("Field", style="cyan")
+                table.add_column("Type", style="green")
+                table.add_column("PK", style="magenta")
+                table.add_column("Nullable", style="yellow")
+
+                for field in metadata:
+                    table.add_row(
+                        field.field_name,
+                        field.type,
+                        "✓" if field.is_primary_key else "",
+                        "✓" if field.field_can_be_null else "",
+                    )
+
+                console.print(table)
+
+                if pk_fields:
+                    console.print(f"\n[green]Primary Keys:[/green] {', '.join(pk_fields)}")
+
+            except Exception as e:
+                console.print(f"[red]Error: {str(e)}[/red]")
+                raise typer.Exit(1)
+
+    asyncio.run(_get_info())
+
+
+@app.command()
+def search(term: str) -> None:
+    """Search entities by name, scope, or description."""
+
+    async def _search() -> None:
+        async with get_client() as client:
+            entities_list = await client.list_apis()
+
+            term_lower = term.lower()
+            results = [
+                e
+                for e in entities_list
+                if (
+                    term_lower in e.api_url.lower()
+                    or term_lower in e.external_api_name.lower()
+                    or (e.description and term_lower in e.description.lower())
+                )
+            ]
+
+            if not results:
+                console.print(f"[yellow]No entities found matching '{term}'[/yellow]")
+                return
+
+            console.print(f"\n[green]Found {len(results)} entities matching '{term}':[/green]\n")
+
+            table = Table(title=f"Search Results: '{term}'")
+            table.add_column("API URL", style="cyan")
+            table.add_column("Name", style="green")
+            table.add_column("Description", style="white")
+
+            for entity in sorted(results, key=lambda x: x.api_url):
+                table.add_row(
+                    entity.api_url,
+                    entity.external_api_name,
+                    (entity.description or "")[:50] + "..." if entity.description and len(entity.description) > 50 else (entity.description or ""),
+                )
+
+            console.print(table)
+
+    asyncio.run(_search())
+
+
+@app.command()
+def ask(question: str) -> None:
+    """Ask questions about the API using natural language.
+
+    This command uses the documentation server to answer questions about
+    available entities, their metadata, and usage patterns.
+
+    Examples:
+      fsgw ask "What entities are in the ops scope?"
+      fsgw ask "Show me audit trail fields"
+      fsgw ask "How do I query the products entity?"
+    """
+
+    async def _ask() -> None:
+        # Check if we can reach the docs server
+        doc_server_url = os.getenv("FSGW_DOC_SERVER_URL", "http://localhost:8000")
+
+        try:
+            async with httpx.AsyncClient() as http_client:
+                # Try to get health status
+                response = await http_client.get(f"{doc_server_url}/health", timeout=5.0)
+                if response.status_code != 200:
+                    console.print(f"[yellow]Documentation server not available at {doc_server_url}[/yellow]")
+                    console.print("[yellow]Start it with: fsgw-server[/yellow]")
+                    console.print("[yellow]Attempting direct API query instead...[/yellow]\n")
+                    # Fall back to direct search
+                    await _fallback_search(question)
+                    return
+
+        except (httpx.ConnectError, httpx.TimeoutException):
+            console.print(f"[yellow]Documentation server not available at {doc_server_url}[/yellow]")
+            console.print("[yellow]Start it with: fsgw-server[/yellow]")
+            console.print("[yellow]Attempting direct API query instead...[/yellow]\n")
+            # Fall back to direct search
+            await _fallback_search(question)
+            return
+
+        # Parse question to determine intent
+        question_lower = question.lower()
+
+        # Intent: List entities in a scope
+        if any(word in question_lower for word in ["entities in", "what entities", "list entities"]):
+            for scope in ["ops", "data", "config", "metadata", "globalmeta", "rbac"]:
+                if scope in question_lower:
+                    console.print(f"[cyan]Finding entities in {scope} scope...[/cyan]\n")
+                    async with get_client() as client:
+                        entities_list = await client.list_apis_by_scope(scope)
+                        console.print(f"[green]Found {len(entities_list)} entities:[/green]\n")
+                        for entity in sorted(entities_list, key=lambda x: x.api_url):
+                            console.print(f"  • {entity.api_url}")
+                    return
+
+        # Intent: Get metadata for an entity
+        if any(word in question_lower for word in ["fields", "metadata", "schema", "columns"]):
+            # Try to extract entity name
+            async with get_client() as client:
+                entities_list = await client.list_apis()
+                for entity in entities_list:
+                    if entity.api_url.lower() in question_lower or entity.external_api_name.lower() in question_lower:
+                        console.print(f"[cyan]Getting metadata for {entity.api_url}...[/cyan]\n")
+                        metadata = await client.get_metadata(entity.api_url)
+                        table = Table(title=f"{entity.api_url} Fields")
+                        table.add_column("Field", style="cyan")
+                        table.add_column("Type", style="green")
+                        table.add_column("PK", style="magenta")
+
+                        for field in metadata:
+                            table.add_row(
+                                field.field_name,
+                                field.type,
+                                "✓" if field.is_primary_key else "",
+                            )
+
+                        console.print(table)
+                        return
+
+        # Intent: How to query
+        if any(word in question_lower for word in ["how to query", "how do i query", "query example"]):
+            console.print(Panel(Markdown("""
+            **Querying Entities:**
+
+            Use the `fsgw query` command:
+
+            ```bash
+            # Simple query
+            fsgw query ops/auditTrail --limit 10
+
+            # With filters
+            fsgw query ops/auditTrail --filter tenantId=7 --limit 10
+
+            # With sorting
+            fsgw query ops/auditTrail --sort-by auditId --sort-order desc
+
+            # JSON output
+            fsgw query ops/auditTrail --output json
+            ```
+
+            **Using the Python SDK:**
+
+            ```python
+            from fsgw import FSGWClient, QueryRequest
+
+            async with FSGWClient(...) as client:
+                # Simple query
+                results = await client.query("ops/auditTrail")
+
+                # With filters
+                query = QueryRequest() \\
+                    .add_filter("tenantId", "=", 7) \\
+                    .limit(10)
+                results = await client.query("ops/auditTrail", query)
+            ```
+            """), title="Query Examples"))
+            return
+
+        # Default: search
+        console.print(f"[cyan]Searching for: {question}[/cyan]\n")
+        await _fallback_search(question)
+
+    async def _fallback_search(term: str) -> None:
+        """Fallback to direct search if doc server unavailable."""
+        async with get_client() as client:
+            entities_list = await client.list_apis()
+
+            term_lower = term.lower()
+            results = [
+                e
+                for e in entities_list
+                if (
+                    term_lower in e.api_url.lower()
+                    or term_lower in e.external_api_name.lower()
+                    or (e.description and term_lower in e.description.lower())
+                )
+            ]
+
+            if results:
+                console.print(f"[green]Found {len(results)} related entities:[/green]\n")
+                for entity in results[:10]:  # Limit to 10
+                    console.print(f"  • [cyan]{entity.api_url}[/cyan] - {entity.external_api_name}")
+            else:
+                console.print("[yellow]No direct matches found. Try being more specific.[/yellow]")
+                console.print("\n[cyan]Available scopes:[/cyan] ops, data, config, metadata, globalmeta, rbac")
+                console.print("\n[cyan]Example questions:[/cyan]")
+                console.print("  • What entities are in the ops scope?")
+                console.print("  • Show me audit trail fields")
+                console.print("  • How do I query data?")
+
+    asyncio.run(_ask())
+
+
+@app.command()
+def server(
+    host: str = typer.Option("0.0.0.0", "--host", "-h", help="Host to bind to"),
+    port: int = typer.Option(8000, "--port", "-p", help="Port to bind to"),
+    reload: bool = typer.Option(False, "--reload", "-r", help="Enable auto-reload"),
+) -> None:
+    """Start the documentation server."""
+    console.print(f"[green]Starting documentation server on http://{host}:{port}[/green]")
+    console.print("[cyan]Press Ctrl+C to stop[/cyan]\n")
+
+    from fsgw.server.main import main as server_main
+    server_main(host=host, port=port, reload=reload)
 
 
 @app.command()
