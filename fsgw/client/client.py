@@ -158,12 +158,12 @@ class FSGWClient(BaseClient):
 
         # Convert to EndpointEntity objects
         raw_data = api_response.get_data()
-        endpoints_response = EndpointsResponse(endpoints=raw_data)
+        endpoints_response = EndpointsResponse(entities=raw_data)
 
         # Cache results
-        self._entities_cache = endpoints_response.endpoints
+        self._entities_cache = endpoints_response.entities
 
-        return endpoints_response.endpoints
+        return endpoints_response.entities
 
     async def list_apis_by_scope(
         self, scope: str, use_cache: bool = True
