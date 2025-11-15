@@ -103,13 +103,13 @@ class FSGWClient(BaseClient):
         Get authentication headers with valid token.
 
         Returns:
-            Dictionary with Authorization header
+            Dictionary with access-token header
 
         Raises:
             AuthenticationError: If authentication fails
         """
         token = await self._auth_client.get_valid_token()
-        return {"Authorization": f"Bearer {token}"}
+        return {"access-token": token}
 
     # -------------------------------------------------------------------------
     # API #1: Discovery - List all entities
