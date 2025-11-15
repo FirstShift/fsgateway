@@ -1,6 +1,6 @@
-"""Client module for FSG SDK."""
+"""Client module for FSGW SDK."""
 
+from fsgw.client.base import BaseClient
 from fsgw.client.client import FSGWClient
-from fsgw.client.models import APIResponse, HTTPStatus
 
-__all__ = ["FSGWClient", "APIResponse", "HTTPStatus"]
+__all__ = ["FSGWClient", "BaseClient"]

@@ -1,515 +1,523 @@
 """
-FSGWClient - FirstShift API Gateway Client.
+Main FSGW SDK client.
 
-Provides a type-safe SDK for interacting with the FirstShift API Gateway.
+Provides high-level interface to all FirstShift Gateway APIs.
 """
 
-import asyncio
-import base64
-import json
-from datetime import UTC, datetime
 from typing import Any
 
-import httpx
-import logfire
-from pydantic import BaseModel, Field, PrivateAttr, field_validator
+from fsgw.auth.client import AuthClient
+from fsgw.client.base import BaseClient
+from fsgw.exceptions import APIError, EntityNotFoundError, MetadataError, QueryError
+from fsgw.models.endpoints import EndpointEntity, EndpointsResponse
+from fsgw.models.metadata import FieldMetadata, MetadataResponse
+from fsgw.models.query import QueryRequest, QueryResponse
+from fsgw.models.responses import DataResponse
 
-from fsgw.auth.models import AuthOutput, AuthUserData, LoginRequest
-from fsgw.client.models import APIResponse, AuthToken, HTTPStatus
-from fsgw.models import EndpointsResponse, MetadataResponse, QueryRequest, QueryResponse
 
-
-class FSGWClient(BaseModel):
+class FSGWClient(BaseClient):
     """
-    FirstShift API Gateway Client.
+    Main client for FirstShift Gateway API.
 
-    Provides discovery, metadata, and query capabilities for any entity
-    exposed by the FirstShift platform.
+    Provides high-level access to:
+    - API #1: Discovery (list all entities)
+    - API #2: Metadata (get field information)
+    - API #3: Query (retrieve entity data)
 
-    Usage:
-        >>> client = FSGWClient(
-        ...     gateway_url="https://dev-cloudgateway.firstshift.ai",
-        ...     tenant_id=7,
-        ...     username="user@example.com",
-        ...     password="secret"
-        ... )
-        >>>
-        >>> # Authentication happens automatically on first API call
-        >>> endpoints = await client.list_endpoints()
-        >>>
-        >>> # Get metadata for an entity
-        >>> metadata = await client.get_metadata(entity="products")
-        >>>
-        >>> # Query data
-        >>> results = await client.query(entity="products", filters={"status": "active"})
+    Features:
+    - Automatic authentication and token refresh
+    - Connection pooling and retry logic
+    - Type-safe responses with Pydantic models
+    - Context manager support
+
+    Example:
+        ```python
+        async with FSGWClient(
+            gateway_url="https://dev-cloudgateway.firstshift.ai",
+            username="user",
+            password="pass",
+            tenant_id=7,
+        ) as client:
+            # List all entities
+            entities = await client.list_apis()
+
+            # Get metadata
+            metadata = await client.get_metadata("ops/auditTrail")
+
+            # Query data
+            query = QueryRequest().add_filter("tenantId", "=", 7).limit(10)
+            results = await client.query("ops/auditTrail", query)
+        ```
     """
 
-    # Required configuration
-    gateway_url: str = Field(
-        ...,
-        description="FirstShift API gateway URL",
-        examples=["https://dev-cloudgateway.firstshift.ai"],
-    )
-
-    tenant_id: int = Field(
-        ...,
-        ge=1,
-        description="Tenant identifier",
-        examples=[7, 12345],
-    )
-
-    username: str = Field(
-        ...,
-        description="User login name for authentication",
-        examples=["user@example.com"],
-    )
-
-    password: str = Field(
-        ...,
-        description="User password for authentication",
-    )
-
-    # Optional - will be set after authentication
-    api_key: str | None = Field(
-        default=None,
-        description="API access token (set automatically after authentication)",
-    )
-
-    # Optional configuration
-    timeout: int = Field(
-        default=30,
-        ge=1,
-        le=300,
-        description="Request timeout in seconds",
-    )
-    auto_refresh: bool = Field(
-        default=True,
-        description="Automatically refresh access tokens before they expire.",
-    )
-    refresh_lead_time: int = Field(
-        default=300,
-        ge=0,
-        le=3600,
-        description="Seconds before expiration when a proactive refresh is triggered.",
-    )
-
-    # Internal state
-    _http_client: httpx.AsyncClient | None = PrivateAttr(default=None)
-    _authenticated: bool = PrivateAttr(default=False)
-    _auth_token: AuthToken | None = PrivateAttr(default=None)
-    _user_info: AuthUserData | None = PrivateAttr(default=None)
-    _refresh_lock: asyncio.Lock | None = PrivateAttr(default=None)
-
-    class Config:
-        """Pydantic configuration."""
-
-        arbitrary_types_allowed = True
-
-    @field_validator("gateway_url")
-    @classmethod
-    def validate_gateway_url(cls, v: str) -> str:
-        """Validate and normalize gateway URL."""
-        v = v.strip()
-        if not v:
-            raise ValueError("Gateway URL cannot be empty")
-        if not v.startswith(("http://", "https://")):
-            raise ValueError("Gateway URL must start with http:// or https://")
-        return v.rstrip("/")
-
-    def __init__(self, **data: Any) -> None:
-        """
-        Initialize client.
-
-        Args:
-            **data: Client configuration parameters
-        """
-        super().__init__(**data)
-
-        # Each client maintains its own refresh lock to prevent concurrent refresh calls.
-        object.__setattr__(self, "_refresh_lock", asyncio.Lock())
-
-        # Initialize HTTP client
-        object.__setattr__(
-            self,
-            "_http_client",
-            httpx.AsyncClient(
-                base_url=self.gateway_url,
-                timeout=httpx.Timeout(self.timeout),
-            ),
-        )
-
-    @property
-    def auth_token(self) -> AuthToken | None:
-        """Return the current authentication token details, if available."""
-        return self.__pydantic_private__.get("_auth_token")
-
-    @property
-    def user_info(self) -> AuthUserData | None:
-        """Return metadata about the authenticated user."""
-        return self.__pydantic_private__.get("_user_info")
-
-    async def _make_request(
+    def __init__(
         self,
-        method: str,
-        path: str,
-        params: dict | None = None,
-        json_data: dict | None = None,
-        *,
-        include_access_token: bool = True,
-    ) -> APIResponse:
+        gateway_url: str,
+        username: str | None = None,
+        password: str | None = None,
+        tenant_id: int | None = None,
+        timeout: float = 30.0,
+        max_retries: int = 3,
+        max_connections: int = 100,
+        max_keepalive_connections: int = 20,
+    ):
         """
-        Core HTTP request method.
+        Initialize FSGW client.
 
         Args:
-            method: HTTP method (GET, POST)
-            path: Endpoint path
-            params: Query parameters
-            json_data: Request body as JSON
-            include_access_token: Whether to include access token header
-
-        Returns:
-            APIResponse with data or error
+            gateway_url: Base URL of the gateway (e.g., https://dev-cloudgateway.firstshift.ai)
+            username: Username for authentication
+            password: Password for authentication
+            tenant_id: Tenant ID for authentication
+            timeout: Default timeout in seconds
+            max_retries: Maximum number of retry attempts
+            max_connections: Maximum number of concurrent connections
+            max_keepalive_connections: Maximum number of keep-alive connections
         """
-        # Ensure authentication before making request
-        if include_access_token and not self.__pydantic_private__.get("_authenticated", False):
-            await self._authenticate()
-
-        with logfire.span(
-            "fsgw.request",
-            method=method,
-            path=path,
-            tenant_id=self.tenant_id,
-        ):
-            response: httpx.Response | None = None
-
-            try:
-                headers = {}
-                if include_access_token and self.api_key:
-                    headers["access-token"] = self.api_key
-
-                response = await self._http_client.request(
-                    method=method,
-                    url=path,
-                    params=params,
-                    json=json_data,
-                    headers=headers,
-                )
-            except httpx.TimeoutException as e:
-                return APIResponse.error_response(
-                    error=f"Request timeout after {self.timeout}s",
-                    error_code="TIMEOUT",
-                    status_code=408,
-                )
-            except httpx.NetworkError as e:
-                return APIResponse.error_response(
-                    error=f"Network error: {str(e)}",
-                    error_code="NETWORK_ERROR",
-                    status_code=HTTPStatus.SERVICE_UNAVAILABLE,
-                )
-            except Exception as e:
-                return APIResponse.error_response(
-                    error=str(e),
-                    error_code="UNEXPECTED_ERROR",
-                    status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
-                )
-
-            if response is None:
-                return APIResponse.error_response(
-                    error="Failed to receive response from FirstShift API",
-                    status_code=HTTPStatus.SERVICE_UNAVAILABLE,
-                )
-
-            logfire.info(
-                f"{method} {path} -> {response.status_code}",
-                status_code=response.status_code,
-            )
-
-            if response.status_code == 200:
-                data = response.json()
-                return APIResponse.success_response(data=data)
-
-            error_msg = f"HTTP {response.status_code}"
-            try:
-                error_data = response.json()
-                if isinstance(error_data, dict) and "error" in error_data:
-                    error_msg = error_data["error"]
-            except Exception:
-                pass
-
-            return APIResponse.error_response(
-                error=error_msg,
-                status_code=response.status_code,
-            )
-
-    async def _authenticate(self) -> None:
-        """
-        Perform authentication with stored credentials.
-
-        Called automatically on first SDK method call if not already authenticated.
-        Stores the access token for subsequent requests.
-
-        Raises:
-            ValueError: If authentication fails
-        """
-        # Check if already authenticated via __pydantic_private__
-        if self.__pydantic_private__.get("_authenticated", False):
-            return
-
-        # Build login request
-        login_request = LoginRequest(
-            username=self.username,
-            password=self.password,
-            tenant_id=self.tenant_id,
+        super().__init__(
+            base_url=gateway_url,
+            timeout=timeout,
+            max_retries=max_retries,
+            max_connections=max_connections,
+            max_keepalive_connections=max_keepalive_connections,
         )
 
-        # Call authenticate endpoint
-        response = await self._make_request(
-            method="POST",
-            path="/auth/login",
-            json_data=login_request.model_dump(by_alias=True),
-            include_access_token=False,
+        # Initialize auth client
+        self._auth_client = AuthClient(
+            gateway_url=gateway_url,
+            username=username,
+            password=password,
+            tenant_id=tenant_id,
         )
 
-        if not response.success or not response.data:
-            error_msg = response.error or "Authentication failed"
-            raise ValueError(f"Authentication failed: {error_msg}")
-
-        # Extract auth data from response
-        auth_data = AuthOutput(**response.data.get("data", {}))
-
-        self._apply_login_metadata(auth_data)
-
-    def _apply_login_metadata(self, auth_data: AuthOutput) -> None:
-        """Persist login metadata (tokens, user info)."""
-        self._update_auth_token(
-            access_token=auth_data.access_token,
-            refresh_token=auth_data.refresh_token,
-        )
-
-        private = object.__getattribute__(self, "__pydantic_private__")
-        private["_user_info"] = auth_data.user_data
-
-    def _update_auth_token(self, *, access_token: str, refresh_token: str | None) -> AuthToken:
-        """Update stored auth token and access key."""
-        token = self._build_auth_token(access_token=access_token, refresh_token=refresh_token)
-        object.__setattr__(self, "api_key", token.access_token)
-
-        private = object.__getattribute__(self, "__pydantic_private__")
-        private["_auth_token"] = token
-        private["_authenticated"] = True
-        return token
-
-    def _build_auth_token(self, *, access_token: str, refresh_token: str | None) -> AuthToken:
-        """Construct an AuthToken with inferred expiry information."""
-        expires_at, expires_in = self._extract_expiration_info(access_token)
-        token_kwargs: dict[str, Any] = {
-            "access_token": access_token,
-            "refresh_token": refresh_token,
-            "issued_at": datetime.utcnow(),
-        }
-
-        if expires_at is not None:
-            token_kwargs["expires_at"] = expires_at
-        if expires_in is not None:
-            token_kwargs["expires_in"] = expires_in
-
-        return AuthToken(**token_kwargs)
-
-    def _extract_expiration_info(self, access_token: str) -> tuple[datetime | None, int | None]:
-        """Decode JWT expiry details."""
-        payload = self._decode_jwt_payload(access_token)
-        if not payload:
-            return (None, None)
-
-        exp = payload.get("exp")
-        if not isinstance(exp, (int, float)):
-            return (None, None)
-
-        expires_at = datetime.fromtimestamp(int(exp), tz=UTC).replace(tzinfo=None)
-        remaining = expires_at - datetime.utcnow()
-        expires_in = max(int(remaining.total_seconds()), 0)
-        return (expires_at, expires_in)
-
-    def _decode_jwt_payload(self, token: str) -> dict[str, Any] | None:
-        """Decode JWT payload without verifying signature."""
-        try:
-            parts = token.split(".")
-            if len(parts) != 3:
-                return None
-            payload_segment = parts[1]
-            padding = "=" * (-len(payload_segment) % 4)
-            payload_bytes = base64.urlsafe_b64decode(payload_segment + padding)
-            return json.loads(payload_bytes.decode("utf-8"))
-        except Exception:
-            return None
-
-    # API #1 - List All Available Endpoints
-    async def list_endpoints(self) -> APIResponse[EndpointsResponse]:
-        """
-        List all available API endpoints (API #1).
-
-        Returns all API groups and entities exposed by the platform.
-
-        Returns:
-            APIResponse[EndpointsResponse]: Response with all endpoints
-
-        Example:
-            >>> endpoints = await client.list_endpoints()
-            >>> if endpoints.success:
-            ...     for group in endpoints.data.groups:
-            ...         print(f"Group: {group.name}")
-            ...         for entity in group.entities:
-            ...             print(f"  - {entity.name}: {entity.endpoint}")
-        """
-        response = await self._make_request(
-            method="GET",
-            path="/api/v1/endpoints",
-        )
-
-        if not response.success:
-            return APIResponse.error_response(
-                error=response.error or "Failed to list endpoints",
-                status_code=response.status_code,
-            )
-
-        # Parse response data into EndpointsResponse
-        try:
-            endpoints_data = EndpointsResponse(**response.data)
-            return APIResponse.success_response(data=endpoints_data)
-        except Exception as e:
-            return APIResponse.error_response(
-                error=f"Failed to parse endpoints response: {str(e)}",
-                status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
-            )
-
-    # API #2 - Get Metadata for Any Entity
-    async def get_metadata(self, entity: str) -> APIResponse[MetadataResponse]:
-        """
-        Get metadata for a specific entity (API #2).
-
-        Returns field-level schema information including data types,
-        constraints, and primary keys.
-
-        Args:
-            entity: Entity name (e.g., "products", "customers")
-
-        Returns:
-            APIResponse[MetadataResponse]: Response with entity metadata
-
-        Example:
-            >>> metadata = await client.get_metadata(entity="products")
-            >>> if metadata.success:
-            ...     for field in metadata.data.fields:
-            ...         print(f"{field.name}: {field.data_type}")
-        """
-        response = await self._make_request(
-            method="GET",
-            path=f"/api/v1/metadata/{entity}",
-        )
-
-        if not response.success:
-            return APIResponse.error_response(
-                error=response.error or f"Failed to get metadata for {entity}",
-                status_code=response.status_code,
-            )
-
-        # Parse response data into MetadataResponse
-        try:
-            metadata_data = MetadataResponse(**response.data)
-            return APIResponse.success_response(data=metadata_data)
-        except Exception as e:
-            return APIResponse.error_response(
-                error=f"Failed to parse metadata response: {str(e)}",
-                status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
-            )
-
-    # API #3 - Query Data for Any Entity
-    async def query(
-        self,
-        entity: str,
-        filters: dict[str, Any] | None = None,
-        sort_by: str | None = None,
-        sort_order: str = "asc",
-        page: int = 1,
-        limit: int = 100,
-        fields: list[str] | None = None,
-    ) -> APIResponse[QueryResponse]:
-        """
-        Query data for a specific entity (API #3).
-
-        Supports fully generic querying with filters, sorting, pagination,
-        and optional field projections.
-
-        Args:
-            entity: Entity name (e.g., "products", "customers")
-            filters: Filter conditions as key-value pairs
-            sort_by: Field name to sort by
-            sort_order: Sort order ("asc" or "desc")
-            page: Page number (1-indexed)
-            limit: Records per page (1-1000)
-            fields: Fields to include in response (projection)
-
-        Returns:
-            APIResponse[QueryResponse]: Response with query results
-
-        Example:
-            >>> # Simple query
-            >>> results = await client.query(entity="products")
-            >>>
-            >>> # Query with filters and sorting
-            >>> results = await client.query(
-            ...     entity="products",
-            ...     filters={"category": "electronics", "price": {"$gt": 100}},
-            ...     sort_by="price",
-            ...     sort_order="desc",
-            ...     limit=20
-            ... )
-            >>>
-            >>> if results.success:
-            ...     for item in results.data.items:
-            ...         print(item)
-        """
-        # Build query request
-        query_request = QueryRequest(
-            filters=filters,
-            sort_by=sort_by,
-            sort_order=sort_order,
-            page=page,
-            limit=limit,
-            fields=fields,
-        )
-
-        response = await self._make_request(
-            method="POST",
-            path=f"/api/v1/query/{entity}",
-            json_data=query_request.model_dump(exclude_none=True),
-        )
-
-        if not response.success:
-            return APIResponse.error_response(
-                error=response.error or f"Failed to query {entity}",
-                status_code=response.status_code,
-            )
-
-        # Parse response data into QueryResponse
-        try:
-            query_data = QueryResponse(**response.data)
-            return APIResponse.success_response(data=query_data)
-        except Exception as e:
-            return APIResponse.error_response(
-                error=f"Failed to parse query response: {str(e)}",
-                status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
-            )
+        # Cache for discovered entities
+        self._entities_cache: list[EndpointEntity] | None = None
 
     async def close(self) -> None:
-        """Close HTTP client and cleanup resources."""
-        if self._http_client:
-            await self._http_client.aclose()
+        """Close HTTP client and auth client."""
+        await super().close()
+        await self._auth_client.close()
 
-    async def __aenter__(self):
-        """Async context manager entry."""
-        return self
+    async def _get_auth_headers(self) -> dict[str, str]:
+        """
+        Get authentication headers with valid token.
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
-        """Async context manager exit."""
-        await self.close()
+        Returns:
+            Dictionary with Authorization header
+
+        Raises:
+            AuthenticationError: If authentication fails
+        """
+        token = await self._auth_client.get_valid_token()
+        return {"Authorization": f"Bearer {token}"}
+
+    # -------------------------------------------------------------------------
+    # API #1: Discovery - List all entities
+    # -------------------------------------------------------------------------
+
+    async def list_apis(self, use_cache: bool = True) -> list[EndpointEntity]:
+        """
+        List all available API entities (API #1).
+
+        Args:
+            use_cache: Use cached results if available
+
+        Returns:
+            List of all available entities
+
+        Raises:
+            APIError: If API request fails
+
+        Example:
+            ```python
+            entities = await client.list_apis()
+            for entity in entities:
+                print(f"{entity.api_scope}/{entity.api_url}")
+            ```
+        """
+        # Return cached results if available and requested
+        if use_cache and self._entities_cache is not None:
+            return self._entities_cache
+
+        # Get auth headers
+        headers = await self._get_auth_headers()
+
+        # Make API request
+        response = await self.get("/api/v1/meta/apis", headers=headers)
+
+        # Parse response
+        data = response.json()
+        api_response = DataResponse[list[dict[str, Any]]](**data)
+
+        if not api_response.is_success():
+            raise APIError(
+                f"Failed to list APIs: {api_response.message}",
+                status_code=api_response.status_code,
+                response_data=data,
+            )
+
+        # Convert to EndpointEntity objects
+        raw_data = api_response.get_data()
+        endpoints_response = EndpointsResponse(endpoints=raw_data)
+
+        # Cache results
+        self._entities_cache = endpoints_response.endpoints
+
+        return endpoints_response.endpoints
+
+    async def list_apis_by_scope(
+        self, scope: str, use_cache: bool = True
+    ) -> list[EndpointEntity]:
+        """
+        List entities filtered by scope.
+
+        Args:
+            scope: API scope to filter by (e.g., "ops", "data", "metadata")
+            use_cache: Use cached results if available
+
+        Returns:
+            List of entities in the specified scope
+
+        Raises:
+            APIError: If API request fails
+
+        Example:
+            ```python
+            ops_entities = await client.list_apis_by_scope("ops")
+            ```
+        """
+        entities = await self.list_apis(use_cache=use_cache)
+        return [e for e in entities if e.api_scope == scope]
+
+    async def get_api_info(
+        self, api_url: str, use_cache: bool = True
+    ) -> EndpointEntity:
+        """
+        Get information about a specific entity.
+
+        Args:
+            api_url: Entity URL (e.g., "ops/auditTrail")
+            use_cache: Use cached results if available
+
+        Returns:
+            Entity information
+
+        Raises:
+            EntityNotFoundError: If entity is not found
+            APIError: If API request fails
+
+        Example:
+            ```python
+            entity = await client.get_api_info("ops/auditTrail")
+            print(entity.description)
+            ```
+        """
+        entities = await self.list_apis(use_cache=use_cache)
+
+        # Search for matching entity
+        for entity in entities:
+            if entity.api_url == api_url:
+                return entity
+
+        raise EntityNotFoundError(f"Entity not found: {api_url}")
+
+    def clear_apis_cache(self) -> None:
+        """Clear cached entity list."""
+        self._entities_cache = None
+
+    # -------------------------------------------------------------------------
+    # API #2: Metadata - Get field information
+    # -------------------------------------------------------------------------
+
+    async def get_metadata(self, api_url: str) -> list[FieldMetadata]:
+        """
+        Get metadata for an entity (API #2).
+
+        Args:
+            api_url: Entity URL (e.g., "ops/auditTrail")
+
+        Returns:
+            List of field metadata
+
+        Raises:
+            MetadataError: If metadata retrieval fails
+            APIError: If API request fails
+
+        Example:
+            ```python
+            metadata = await client.get_metadata("ops/auditTrail")
+            for field in metadata:
+                print(f"{field.field_name}: {field.type}")
+            ```
+        """
+        # Parse api_url into scope and entity
+        parts = api_url.split("/")
+        if len(parts) != 2:
+            raise MetadataError(
+                f"Invalid api_url format: {api_url}. Expected 'scope/entity'"
+            )
+
+        scope, entity = parts
+
+        # Get auth headers
+        headers = await self._get_auth_headers()
+
+        # Make API request
+        path = f"/api/v1/meta/{scope}/{entity}"
+        response = await self.get(path, headers=headers)
+
+        # Parse response
+        data = response.json()
+        api_response = DataResponse[list[dict[str, Any]]](**data)
+
+        if not api_response.is_success():
+            raise MetadataError(
+                f"Failed to get metadata for {api_url}: {api_response.message}",
+                details={"api_url": api_url, "response": data},
+            )
+
+        # Convert to FieldMetadata objects
+        raw_data = api_response.get_data()
+        metadata_response = MetadataResponse(fields=raw_data)
+
+        return metadata_response.fields
+
+    async def get_primary_keys(self, api_url: str) -> list[str]:
+        """
+        Get primary key field names for an entity.
+
+        Args:
+            api_url: Entity URL (e.g., "ops/auditTrail")
+
+        Returns:
+            List of primary key field names
+
+        Raises:
+            MetadataError: If metadata retrieval fails
+
+        Example:
+            ```python
+            pk_fields = await client.get_primary_keys("ops/auditTrail")
+            print(f"Primary keys: {pk_fields}")
+            ```
+        """
+        metadata = await self.get_metadata(api_url)
+        return [field.field_name for field in metadata if field.is_primary_key]
+
+    async def get_field_types(self, api_url: str) -> dict[str, str]:
+        """
+        Get field name to type mapping for an entity.
+
+        Args:
+            api_url: Entity URL (e.g., "ops/auditTrail")
+
+        Returns:
+            Dictionary mapping field names to types
+
+        Raises:
+            MetadataError: If metadata retrieval fails
+
+        Example:
+            ```python
+            field_types = await client.get_field_types("ops/auditTrail")
+            print(f"auditId type: {field_types['auditId']}")
+            ```
+        """
+        metadata = await self.get_metadata(api_url)
+        return {field.field_name: field.type for field in metadata}
+
+    # -------------------------------------------------------------------------
+    # API #3: Query - Retrieve entity data
+    # -------------------------------------------------------------------------
+
+    async def query(
+        self,
+        api_url: str,
+        request: QueryRequest | None = None,
+        timeout: float | None = None,
+    ) -> QueryResponse:
+        """
+        Query entity data (API #3).
+
+        Args:
+            api_url: Entity URL (e.g., "ops/auditTrail")
+            request: Query request with filters, sorting, pagination
+            timeout: Optional timeout override for this request
+
+        Returns:
+            Query response with results
+
+        Raises:
+            QueryError: If query fails
+            APIError: If API request fails
+
+        Example:
+            ```python
+            # Simple query
+            results = await client.query("ops/auditTrail")
+
+            # With filters and pagination
+            query = QueryRequest() \\
+                .add_filter("tenantId", "=", 7) \\
+                .add_filter("eventName", "LIKE", "CREATE%") \\
+                .add_sort("auditId", "DESC") \\
+                .limit(10)
+            results = await client.query("ops/auditTrail", query)
+
+            for row in results:
+                print(row)
+            ```
+        """
+        # Parse api_url into scope and entity
+        parts = api_url.split("/")
+        if len(parts) != 2:
+            raise QueryError(
+                f"Invalid api_url format: {api_url}. Expected 'scope/entity'"
+            )
+
+        scope, entity = parts
+
+        # Use empty request if none provided
+        if request is None:
+            request = QueryRequest()
+
+        # Get auth headers
+        headers = await self._get_auth_headers()
+
+        # Make API request
+        path = f"/api/v1/{scope}/{entity}/query"
+        response = await self.post(
+            path,
+            headers=headers,
+            json=request.model_dump(by_alias=True, exclude_none=True),
+            timeout=timeout,
+        )
+
+        # Parse response
+        data = response.json()
+        api_response = DataResponse[list[dict[str, Any]]](**data)
+
+        if not api_response.is_success():
+            raise QueryError(
+                f"Query failed for {api_url}: {api_response.message}",
+                details={"api_url": api_url, "request": request.model_dump(), "response": data},
+            )
+
+        # Convert to QueryResponse
+        raw_data = api_response.get_data()
+        return QueryResponse(results=raw_data, total=len(raw_data))
+
+    async def query_all(
+        self, api_url: str, page_size: int = 1000, max_results: int | None = None
+    ) -> list[dict[str, Any]]:
+        """
+        Query all data from an entity with automatic pagination.
+
+        Args:
+            api_url: Entity URL (e.g., "ops/auditTrail")
+            page_size: Number of records per page
+            max_results: Optional maximum number of results to return
+
+        Returns:
+            List of all results
+
+        Raises:
+            QueryError: If query fails
+
+        Example:
+            ```python
+            # Get all audit trail records
+            all_records = await client.query_all("ops/auditTrail")
+
+            # Get up to 5000 records
+            records = await client.query_all("ops/auditTrail", max_results=5000)
+            ```
+        """
+        all_results = []
+        offset = 0
+
+        while True:
+            # Check if we've reached max_results
+            if max_results and len(all_results) >= max_results:
+                break
+
+            # Calculate limit for this page
+            limit = page_size
+            if max_results:
+                remaining = max_results - len(all_results)
+                limit = min(limit, remaining)
+
+            # Query this page
+            request = QueryRequest(offset=offset, limit=limit)
+            response = await self.query(api_url, request)
+
+            # Add results
+            page_results = list(response.results)
+            if not page_results:
+                break
+
+            all_results.extend(page_results)
+
+            # Check if we got fewer results than requested (last page)
+            if len(page_results) < limit:
+                break
+
+            offset += limit
+
+        return all_results
+
+    async def query_with_filters(
+        self, api_url: str, filters: list[tuple[str, str, Any]]
+    ) -> QueryResponse:
+        """
+        Query entity with simple filter list.
+
+        Args:
+            api_url: Entity URL
+            filters: List of (field, operation, value) tuples
+
+        Returns:
+            Query response with results
+
+        Raises:
+            QueryError: If query fails
+
+        Example:
+            ```python
+            results = await client.query_with_filters(
+                "ops/auditTrail",
+                [
+                    ("tenantId", "=", 7),
+                    ("eventName", "LIKE", "CREATE%"),
+                ]
+            )
+            ```
+        """
+        request = QueryRequest()
+        for field, operation, value in filters:
+            request.add_filter(field, operation, value)
+
+        return await self.query(api_url, request)
+
+    # -------------------------------------------------------------------------
+    # Utility methods
+    # -------------------------------------------------------------------------
+
+    @property
+    def is_authenticated(self) -> bool:
+        """Check if client is authenticated."""
+        return self._auth_client.is_authenticated
+
+    @property
+    def current_user(self) -> Any | None:
+        """Get current authenticated user data."""
+        return self._auth_client.current_user
+
+    @property
+    def current_roles(self) -> tuple[str, ...]:
+        """Get current user roles."""
+        return self._auth_client.current_roles
+
+    def logout(self) -> None:
+        """Logout and clear cached tokens."""
+        self._auth_client.logout()
