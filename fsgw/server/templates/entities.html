@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+
+{% block sidebar %}
+<aside class="sidebar">
+    <div class="sidebar-section">
+        <h3 class="sidebar-title">Filter by Scope</h3>
+        <ul class="sidebar-links">
+            <li><a href="/docs/entities" class="{% if not current_scope %}active{% endif %}">All Entities</a></li>
+            {% for scope_name, scope_data in scopes.items() %}
+            <li>
+                <a href="/docs/scope/{{ scope_name }}" class="{% if current_scope == scope_name %}active{% endif %}">
+                    {{ scope_name }}
+                    <span class="scope-badge scope-{{ scope_name }}">{{ scope_data.count }}</span>
+                </a>
+            </li>
+            {% endfor %}
+        </ul>
+    </div>
+</aside>
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1 class="page-title">
+        {% if current_scope %}
+            {{ current_scope }} Entities
+        {% else %}
+            All Entities
+        {% endif %}
+    </h1>
+    <p class="page-subtitle">
+        {% if current_scope %}
+            {{ entities|length }} entities in {{ current_scope }} scope
+        {% else %}
+            Browse all {{ entities|length }} entities across {{ scopes|length }} scopes
+        {% endif %}
+    </p>
+</div>
+
+<!-- Search -->
+<input type="text"
+       class="search-box"
+       id="entitySearch"
+       placeholder="Search entities by name or description..."
+       onkeyup="filterEntities()">
+
+<!-- Filter Pills (if not already in sidebar) -->
+{% if not current_scope %}
+<div class="filter-pills">
+    {% for scope_name in scopes.keys() %}
+    <a href="/docs/scope/{{ scope_name }}" class="filter-pill">
+        {{ scope_name }}
+    </a>
+    {% endfor %}
+</div>
+{% endif %}
+
+<!-- Entities Table -->
+<div class="table-container">
+    <table id="entitiesTable">
+        <thead>
+            <tr>
+                <th>Entity Name</th>
+                <th>Scope</th>
+                <th>Description</th>
+                <th>API URL</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for entity in entities %}
+            <tr class="entity-row" data-name="{{ entity.external_api_name|lower }}" data-desc="{{ entity.description|lower if entity.description else '' }}">
+                <td>
+                    <a href="/docs/entity/{{ entity.api_scope }}/{{ entity.api_url.split('/')[1] }}" class="table-link">
+                        {{ entity.external_api_name }}
+                    </a>
+                </td>
+                <td>
+                    <span class="scope-badge scope-{{ entity.api_scope }}">{{ entity.api_scope }}</span>
+                </td>
+                <td style="color: var(--text-secondary); max-width: 400px;">
+                    {{ entity.description or 'No description available' }}
+                </td>
+                <td>
+                    <code style="font-size: 0.875rem; color: var(--primary);">{{ entity.api_url }}</code>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function filterEntities() {
+    const input = document.getElementById('entitySearch');
+    const filter = input.value.toLowerCase();
+    const rows = document.getElementsByClassName('entity-row');
+
+    for (let row of rows) {
+        const name = row.dataset.name;
+        const desc = row.dataset.desc;
+
+        if (name.includes(filter) || desc.includes(filter)) {
+            row.style.display = '';
+        } else {
+            row.style.display = 'none';
+        }
+    }
+}
+</script>
+{% endblock %}

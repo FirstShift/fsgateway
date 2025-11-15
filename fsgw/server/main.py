@@ -13,9 +13,11 @@ from typing import Any
 
 import uvicorn
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
 from fsgw import __version__
@@ -153,6 +155,12 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
+# Setup templates and static files
+templates_dir = Path(__file__).parent / "templates"
+static_dir = Path(__file__).parent / "static"
+templates = Jinja2Templates(directory=str(templates_dir))
+app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
@@ -164,121 +172,138 @@ app.add_middleware(
 
 
 @app.get("/", response_class=HTMLResponse)
-async def root():
-    """Landing page with navigation."""
-    return """
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>FirstShift Gateway API Documentation</title>
-        <style>
-            body {
-                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-                max-width: 1200px;
-                margin: 0 auto;
-                padding: 40px 20px;
-                line-height: 1.6;
-                color: #333;
-            }
-            h1 {
-                color: #2563eb;
-                border-bottom: 3px solid #2563eb;
-                padding-bottom: 10px;
-            }
-            h2 {
-                color: #1e40af;
-                margin-top: 30px;
-            }
-            .card {
-                background: #f8fafc;
-                border: 1px solid #e2e8f0;
-                border-radius: 8px;
-                padding: 20px;
-                margin: 20px 0;
-            }
-            .endpoint {
-                background: #dbeafe;
-                padding: 10px 15px;
-                border-radius: 6px;
-                margin: 10px 0;
-                font-family: monospace;
-            }
-            a {
-                color: #2563eb;
-                text-decoration: none;
-            }
-            a:hover {
-                text-decoration: underline;
-            }
-            .feature {
-                margin: 15px 0;
-                padding-left: 20px;
-            }
-            .feature::before {
-                content: "✓ ";
-                color: #10b981;
-                font-weight: bold;
-            }
-        </style>
-    </head>
-    <body>
-        <h1>FirstShift Gateway API Documentation</h1>
+async def root(request: Request):
+    """Landing page - Home."""
+    entities = await discover_entities()
 
-        <div class="card">
-            <h2>Welcome</h2>
-            <p>
-                This is an interactive documentation server for exploring all FirstShift Gateway APIs.
-                The system auto-discovers all available entities and provides comprehensive metadata
-                and usage examples.
-            </p>
-        </div>
+    # Group by scope
+    by_scope: dict[str, list[EndpointEntity]] = defaultdict(list)
+    for entity in entities:
+        by_scope[entity.api_scope].append(entity)
 
-        <div class="card">
-            <h2>Features</h2>
-            <div class="feature">Browse all 239+ entities organized by scope</div>
-            <div class="feature">View detailed field metadata and schema information</div>
-            <div class="feature">Interactive query examples and testing</div>
-            <div class="feature">Live API health and status monitoring</div>
-            <div class="feature">Auto-generated OpenAPI/Swagger documentation</div>
-        </div>
+    # Calculate stats
+    total_fields = 0
+    for scope_entities in by_scope.values():
+        for entity in scope_entities[:10]:  # Sample first 10 per scope
+            try:
+                metadata = await get_client().get_metadata(entity.api_url)
+                total_fields += len(metadata)
+            except:
+                pass
 
-        <div class="card">
-            <h2>Quick Links</h2>
-            <div class="endpoint">
-                <a href="/entities">GET /entities</a> - Browse all entities
-            </div>
-            <div class="endpoint">
-                <a href="/entities/ops">GET /entities/{scope}</a> - Filter by scope
-            </div>
-            <div class="endpoint">
-                <a href="/entities/ops/auditTrail/metadata">GET /entities/{scope}/{entity}/metadata</a> - View metadata
-            </div>
-            <div class="endpoint">
-                <a href="/search?q=audit">GET /search?q={term}</a> - Search entities
-            </div>
-            <div class="endpoint">
-                <a href="/health">GET /health</a> - API health check
-            </div>
-        </div>
+    scopes_data = {
+        scope: {
+            "count": len(entities_list),
+            "description": f"{scope.capitalize()} scope entities"
+        }
+        for scope, entities_list in by_scope.items()
+    }
 
-        <div class="card">
-            <h2>Interactive Documentation</h2>
-            <p>
-                For full interactive API testing with OpenAPI/Swagger:
-            </p>
-            <div class="endpoint">
-                <a href="/docs">Swagger UI Documentation</a>
-            </div>
-            <div class="endpoint">
-                <a href="/redoc">ReDoc Documentation</a>
-            </div>
-        </div>
-    </body>
-    </html>
-    """
+    return templates.TemplateResponse("index.html", {
+        "request": request,
+        "total_entities": len(entities),
+        "total_scopes": len(by_scope),
+        "total_fields": total_fields,
+        "scopes": scopes_data,
+        "featured_entities": entities[:10]  # First 10 entities as featured
+    })
 
 
-@app.get("/health")
+@app.get("/docs/entities", response_class=HTMLResponse)
+async def docs_entities_page(request: Request):
+    """HTML page: Browse all entities."""
+    entities = await discover_entities()
+
+    # Group by scope
+    by_scope: dict[str, list[EndpointEntity]] = defaultdict(list)
+    for entity in entities:
+        by_scope[entity.api_scope].append(entity)
+
+    scopes_data = {
+        scope: {"count": len(entities_list)}
+        for scope, entities_list in by_scope.items()
+    }
+
+    return templates.TemplateResponse("entities.html", {
+        "request": request,
+        "entities": sorted(entities, key=lambda e: e.api_url),
+        "scopes": scopes_data,
+        "current_scope": None
+    })
+
+
+@app.get("/docs/scope/{scope}", response_class=HTMLResponse)
+async def docs_scope_page(request: Request, scope: str):
+    """HTML page: Entities filtered by scope."""
+    client_inst = get_client()
+    entities = await client_inst.list_apis_by_scope(scope)
+
+    if not entities:
+        raise HTTPException(status_code=404, detail=f"No entities found for scope: {scope}")
+
+    # Get all scopes for sidebar
+    all_entities = await discover_entities()
+    by_scope: dict[str, list[EndpointEntity]] = defaultdict(list)
+    for entity in all_entities:
+        by_scope[entity.api_scope].append(entity)
+
+    scopes_data = {
+        s: {"count": len(e_list)}
+        for s, e_list in by_scope.items()
+    }
+
+    return templates.TemplateResponse("entities.html", {
+        "request": request,
+        "entities": sorted(entities, key=lambda e: e.api_url),
+        "scopes": scopes_data,
+        "current_scope": scope
+    })
+
+
+@app.get("/docs/entity/{scope}/{entity}", response_class=HTMLResponse)
+async def docs_entity_page(request: Request, scope: str, entity: str):
+    """HTML page: Entity detail page."""
+    api_url = f"{scope}/{entity}"
+    client_inst = get_client()
+
+    # Get entity info
+    try:
+        entity_info = await client_inst.get_api_info(api_url)
+    except Exception:
+        raise HTTPException(status_code=404, detail=f"Entity not found: {api_url}")
+
+    # Get metadata
+    try:
+        metadata = await client_inst.get_metadata(api_url)
+    except Exception as e:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Metadata unavailable for {api_url}: {str(e)}"
+        )
+
+    primary_keys = [f.field_name for f in metadata if f.is_primary_key]
+
+    return templates.TemplateResponse("entity_detail.html", {
+        "request": request,
+        "entity": entity_info,
+        "metadata": metadata,
+        "primary_keys": primary_keys
+    })
+
+
+@app.get("/docs/api", response_class=HTMLResponse)
+async def docs_api_page(request: Request):
+    """HTML page: API reference documentation."""
+    return templates.TemplateResponse("api_reference.html", {
+        "request": request
+    })
+
+
+# ============================================================================
+# JSON API Endpoints (programmatic access)
+# ============================================================================
+
+@app.get("/api/health")
 async def health_check():
     """Health check endpoint."""
     try:
@@ -298,10 +323,10 @@ async def health_check():
         }
 
 
-@app.get("/entities", response_model=DiscoveryResponse)
+@app.get("/api/entities", response_model=DiscoveryResponse)
 async def list_entities():
     """
-    List all available API entities grouped by scope.
+    JSON API: List all available API entities grouped by scope.
 
     Returns comprehensive information about all 239+ entities available
     in the FirstShift Gateway.
@@ -327,8 +352,8 @@ async def list_entities():
                         api_url=e.api_url,
                         external_api_name=e.external_api_name,
                         description=e.description,
-                        metadata_url=f"/entities/{e.api_url}/metadata",
-                        query_url=f"/entities/{e.api_url}/query",
+                        metadata_url=f"/api/entities/{e.api_url}/metadata",
+                        query_url=f"/api/entities/{e.api_url}/query",
                     )
                     for e in sorted(scope_entities, key=lambda x: x.api_url)
                 ],
@@ -342,10 +367,10 @@ async def list_entities():
     )
 
 
-@app.get("/entities/{scope}", response_model=list[EntitySummary])
+@app.get("/api/entities/{scope}", response_model=list[EntitySummary])
 async def list_entities_by_scope(scope: str):
     """
-    List entities filtered by scope.
+    JSON API: List entities filtered by scope.
 
     **Available scopes:**
     - `config` - Configuration entities
@@ -367,17 +392,17 @@ async def list_entities_by_scope(scope: str):
             api_url=e.api_url,
             external_api_name=e.external_api_name,
             description=e.description,
-            metadata_url=f"/entities/{e.api_url}/metadata",
-            query_url=f"/entities/{e.api_url}/query",
+            metadata_url=f"/api/entities/{e.api_url}/metadata",
+            query_url=f"/api/entities/{e.api_url}/query",
         )
         for e in entities
     ]
 
 
-@app.get("/entities/{scope}/{entity}/metadata", response_model=MetadataResponse)
+@app.get("/api/entities/{scope}/{entity}/metadata", response_model=MetadataResponse)
 async def get_entity_metadata(scope: str, entity: str):
     """
-    Get detailed metadata for a specific entity.
+    JSON API: Get detailed metadata for a specific entity.
 
     Returns comprehensive field information including:
     - Field names and data types
@@ -386,7 +411,7 @@ async def get_entity_metadata(scope: str, entity: str):
 
     **Example:**
     ```
-    GET /entities/ops/auditTrail/metadata
+    GET /api/entities/ops/auditTrail/metadata
     ```
     """
     api_url = f"{scope}/{entity}"
@@ -423,17 +448,17 @@ async def get_entity_metadata(scope: str, entity: str):
     )
 
 
-@app.get("/entities/{scope}/{entity}/query", response_model=QueryDocsResponse)
+@app.get("/api/entities/{scope}/{entity}/query", response_model=QueryDocsResponse)
 async def get_query_docs(scope: str, entity: str):
     """
-    Get query documentation and examples for an entity.
+    JSON API: Get query documentation and examples for an entity.
 
     Returns example queries with curl commands that can be copy-pasted
     for testing.
 
     **Example:**
     ```
-    GET /entities/ops/auditTrail/query
+    GET /api/entities/ops/auditTrail/query
     ```
     """
     api_url = f"{scope}/{entity}"
@@ -466,7 +491,7 @@ async def get_query_docs(scope: str, entity: str):
                 "limit": 10,
             },
             curl_example=f"""curl -X POST "{gateway_url}/api/v1/{scope}/{entity}/query" \\
-  -H "Authorization: Bearer YOUR_TOKEN" \\
+  -H "access-token: YOUR_TOKEN" \\
   -H "Content-Type: application/json" \\
   -d '{{"limit": 10}}'""",
         ),
@@ -481,7 +506,7 @@ async def get_query_docs(scope: str, entity: str):
                 "limit": 10,
             },
             curl_example=f"""curl -X POST "{gateway_url}/api/v1/{scope}/{entity}/query" \\
-  -H "Authorization: Bearer YOUR_TOKEN" \\
+  -H "access-token: YOUR_TOKEN" \\
   -H "Content-Type: application/json" \\
   -d '{{"selectFieldsList": {field_names}, "limit": 10}}'""",
         ),
@@ -494,14 +519,14 @@ async def get_query_docs(scope: str, entity: str):
     )
 
 
-@app.get("/search")
+@app.get("/api/search")
 async def search_entities(q: str = Query(..., description="Search term")):
     """
-    Search entities by name, scope, or description.
+    JSON API: Search entities by name, scope, or description.
 
     **Example:**
     ```
-    GET /search?q=audit
+    GET /api/search?q=audit
     ```
     """
     entities = await discover_entities()
@@ -513,8 +538,8 @@ async def search_entities(q: str = Query(..., description="Search term")):
             api_url=e.api_url,
             external_api_name=e.external_api_name,
             description=e.description,
-            metadata_url=f"/entities/{e.api_url}/metadata",
-            query_url=f"/entities/{e.api_url}/query",
+            metadata_url=f"/api/entities/{e.api_url}/metadata",
+            query_url=f"/api/entities/{e.api_url}/query",
         )
         for e in entities
         if (
@@ -562,7 +587,8 @@ if __name__ == "__main__":
 
     # Simple CLI argument parsing
     host = "0.0.0.0"
-    port = 8000
+    # Support PORT env var for hosting services (Render, Railway, etc.)
+    port = int(os.getenv("PORT", "8000"))
     reload = "--reload" in sys.argv
 
     if "--host" in sys.argv:

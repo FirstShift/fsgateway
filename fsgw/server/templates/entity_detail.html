@@ -1,0 +1,208 @@
+{% extends "base.html" %}
+
+{% block sidebar %}
+<aside class="sidebar">
+    <div class="sidebar-section">
+        <h3 class="sidebar-title">Navigation</h3>
+        <ul class="sidebar-links">
+            <li><a href="/docs/entities">← All Entities</a></li>
+            <li><a href="/docs/scope/{{ entity.api_scope }}" class="active">{{ entity.api_scope }} Entities</a></li>
+        </ul>
+    </div>
+
+    <div class="sidebar-section">
+        <h3 class="sidebar-title">On This Page</h3>
+        <ul class="sidebar-links">
+            <li><a href="#overview">Overview</a></li>
+            <li><a href="#fields">Field Metadata</a></li>
+            <li><a href="#primary-keys">Primary Keys</a></li>
+            <li><a href="#examples">Query Examples</a></li>
+        </ul>
+    </div>
+</aside>
+{% endblock %}
+
+{% block content %}
+<!-- Entity Header -->
+<div class="page-header">
+    <div>
+        <h1 class="page-title">{{ entity.external_api_name }}</h1>
+        <p class="page-subtitle">
+            <span class="scope-badge scope-{{ entity.api_scope }}">{{ entity.api_scope }}</span>
+            <code style="margin-left: 1rem; color: var(--primary);">{{ entity.api_url }}</code>
+        </p>
+    </div>
+</div>
+
+<!-- Overview Section -->
+<section id="overview" class="content-section">
+    <h2>Overview</h2>
+    <div class="card">
+        <p style="color: var(--text-secondary); line-height: 1.6;">
+            {{ entity.description or 'No description available for this entity.' }}
+        </p>
+
+        <div class="stats-grid" style="margin-top: 1.5rem;">
+            <div class="stat-card">
+                <div class="stat-value">{{ metadata|length }}</div>
+                <div class="stat-label">Total Fields</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">{{ primary_keys|length }}</div>
+                <div class="stat-label">Primary Keys</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">{{ entity.api_scope }}</div>
+                <div class="stat-label">API Scope</div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Primary Keys Section -->
+{% if primary_keys %}
+<section id="primary-keys" class="content-section">
+    <h2>Primary Keys</h2>
+    <div class="card">
+        <p style="color: var(--text-secondary); margin-bottom: 1rem;">
+            These fields uniquely identify records in this entity:
+        </p>
+        <div style="display: flex; flex-wrap: wrap; gap: 0.5rem;">
+            {% for pk in primary_keys %}
+            <span class="filter-pill" style="background: var(--primary); color: white;">
+                {{ pk }}
+            </span>
+            {% endfor %}
+        </div>
+    </div>
+</section>
+{% endif %}
+
+<!-- Field Metadata Section -->
+<section id="fields" class="content-section">
+    <h2>Field Metadata</h2>
+    <div class="card">
+        <p style="color: var(--text-secondary); margin-bottom: 1.5rem;">
+            Complete field information for {{ entity.external_api_name }}. Primary key fields are highlighted.
+        </p>
+
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Field Name</th>
+                        <th>Type</th>
+                        <th>Primary Key</th>
+                        <th>Nullable</th>
+                        <th>Description</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for field in metadata %}
+                    <tr {% if field.is_primary_key %}style="background: var(--primary-light);"{% endif %}>
+                        <td>
+                            <code style="font-weight: {% if field.is_primary_key %}600{% else %}400{% endif %};">
+                                {{ field.field_name }}
+                            </code>
+                            {% if field.is_primary_key %}
+                            <span style="color: var(--primary); margin-left: 0.25rem;">🔑</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <span class="scope-badge" style="background: var(--bg-secondary);">
+                                {{ field.type }}
+                            </span>
+                        </td>
+                        <td>
+                            {% if field.is_primary_key %}
+                            <span style="color: var(--success);">✓ Yes</span>
+                            {% else %}
+                            <span style="color: var(--text-tertiary);">No</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if field.nullable %}
+                            <span style="color: var(--text-secondary);">Yes</span>
+                            {% else %}
+                            <span style="color: var(--text-tertiary);">No</span>
+                            {% endif %}
+                        </td>
+                        <td style="color: var(--text-secondary);">
+                            {{ field.description or '—' }}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</section>
+
+<!-- Query Examples Section -->
+<section id="examples" class="content-section">
+    <h2>Query Examples</h2>
+
+    <div class="card">
+        <h3 style="margin-top: 0;">Python SDK</h3>
+        <pre style="background: var(--bg-code); padding: 1rem; border-radius: 0.5rem; overflow-x: auto;"><code>from fsgw.client import FSGWClient
+from fsgw.models.query import QueryRequest
+
+async with FSGWClient(
+    gateway_url="https://dev-cloudgateway.firstshift.ai",
+    username="your_username",
+    password="your_password",
+    tenant_id=7,
+) as client:
+    # Simple query - get all records
+    results = await client.query("{{ entity.api_url }}")
+
+    # Query with filters
+    query = QueryRequest() \
+        .add_filter("field_name", "=", "value") \
+        .limit(10)
+    results = await client.query("{{ entity.api_url }}", query)</code></pre>
+    </div>
+
+    <div class="card">
+        <h3 style="margin-top: 0;">REST API</h3>
+        <pre style="background: var(--bg-code); padding: 1rem; border-radius: 0.5rem; overflow-x: auto;"><code>POST /api/v1/{{ entity.api_url }}/query
+Headers:
+  access-token: YOUR_TOKEN
+  Content-Type: application/json
+
+Body:
+{
+  "filters": [
+    {
+      "field": "field_name",
+      "operation": "=",
+      "value": "value"
+    }
+  ],
+  "limit": 10,
+  "offset": 0
+}</code></pre>
+    </div>
+
+    <div class="card">
+        <h3 style="margin-top: 0;">CLI</h3>
+        <pre style="background: var(--bg-code); padding: 1rem; border-radius: 0.5rem; overflow-x: auto;"><code># Interactive mode
+fsgw interactive
+
+# Get entity info
+fsgw info {{ entity.api_url }}
+
+# Query data
+fsgw query {{ entity.api_url }}</code></pre>
+    </div>
+</section>
+
+<!-- API Reference Link -->
+<div class="card" style="margin-top: 2rem; background: var(--primary-light); border-left: 4px solid var(--primary);">
+    <p style="margin: 0;">
+        <strong>Need programmatic access?</strong>
+        View the <a href="/docs/api" style="color: var(--primary); text-decoration: underline;">JSON API endpoints</a>
+        for this entity.
+    </p>
+</div>
+{% endblock %}

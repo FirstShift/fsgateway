@@ -45,7 +45,15 @@ htmlcov/
 # Environment
 .env
 .env.local
+.env.remote
 *.log
+
+# Deployment configuration (contains sensitive data)
+.deploy_config
+deployment/deploy_remote.sh
+
+# Secrets directory
+.secrets/
 
 # MyPy
 .mypy_cache/

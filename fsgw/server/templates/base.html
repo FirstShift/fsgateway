@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}FirstShift Gateway API Documentation{% endblock %}</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    {% block extra_css %}{% endblock %}
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <div class="header-content">
+            <a href="/" class="logo">
+                FirstShift <span>Gateway</span>
+            </a>
+            <nav>
+                <ul class="nav-menu">
+                    <li><a href="/" class="{% if active_page == 'home' %}active{% endif %}">Home</a></li>
+                    <li><a href="/docs/entities" class="{% if active_page == 'entities' %}active{% endif %}">Entities</a></li>
+                    <li><a href="/docs/api" class="{% if active_page == 'api' %}active{% endif %}">API Reference</a></li>
+                    <li><a href="/api/health" class="{% if active_page == 'health' %}active{% endif %}">Health</a></li>
+                </ul>
+            </nav>
+        </div>
+    </header>
+
+    <!-- Main Container -->
+    <div class="main-container">
+        {% block sidebar %}{% endblock %}
+
+        <!-- Content -->
+        <main class="content">
+            {% block content %}{% endblock %}
+        </main>
+    </div>
+
+    {% block extra_js %}{% endblock %}
+</body>
+</html>

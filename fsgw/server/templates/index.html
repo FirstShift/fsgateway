@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="page-header">
+    <h1 class="page-title">FirstShift Gateway API Documentation</h1>
+    <p class="page-subtitle">
+        Comprehensive documentation for {{ total_entities }} entities across {{ total_scopes }} scopes
+    </p>
+</div>
+
+<!-- Stats Grid -->
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="stat-value">{{ total_entities }}</div>
+        <div class="stat-label">Total Entities</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value">{{ total_scopes }}</div>
+        <div class="stat-label">API Scopes</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value">{{ total_fields }}</div>
+        <div class="stat-label">Total Fields</div>
+    </div>
+</div>
+
+<!-- Scopes Overview -->
+<div class="card">
+    <h2 class="card-title">API Scopes</h2>
+    <p style="color: var(--text-secondary); margin-bottom: 1.5rem;">
+        Entities are organized into functional scopes for better discoverability
+    </p>
+
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>Scope</th>
+                    <th>Description</th>
+                    <th>Entities</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for scope_name, scope_data in scopes.items() %}
+                <tr>
+                    <td>
+                        <span class="scope-badge scope-{{ scope_name }}">{{ scope_name }}</span>
+                    </td>
+                    <td>{{ scope_data.description }}</td>
+                    <td><strong>{{ scope_data.count }}</strong></td>
+                    <td>
+                        <a href="/docs/scope/{{ scope_name }}" class="table-link">View Entities →</a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Quick Start -->
+<div class="card">
+    <h2 class="card-title">Quick Start</h2>
+
+    <h3 style="font-size: 1rem; margin-bottom: 0.5rem; color: var(--text-primary);">1. Browse Entities</h3>
+    <p style="color: var(--text-secondary); margin-bottom: 1rem;">
+        Explore all available entities organized by scope. Click on any entity to view its detailed documentation.
+    </p>
+    <a href="/docs/entities" class="btn btn-primary" style="margin-bottom: 1.5rem;">Browse All Entities</a>
+
+    <h3 style="font-size: 1rem; margin-bottom: 0.5rem; color: var(--text-primary);">2. View Entity Details</h3>
+    <p style="color: var(--text-secondary); margin-bottom: 1rem;">
+        Each entity page provides comprehensive information including field definitions, data types, and constraints.
+    </p>
+
+    <h3 style="font-size: 1rem; margin-bottom: 0.5rem; color: var(--text-primary);">3. Use the API</h3>
+    <p style="color: var(--text-secondary); margin-bottom: 1rem;">
+        Access entity data programmatically using our REST API or Python SDK.
+    </p>
+    <a href="/docs/api" class="btn btn-secondary">API Documentation</a>
+</div>
+
+<!-- Featured Entities -->
+<div class="card">
+    <h2 class="card-title">Popular Entities</h2>
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>Entity</th>
+                    <th>Scope</th>
+                    <th>Description</th>
+                    <th>Fields</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for entity in featured_entities %}
+                <tr>
+                    <td>
+                        <a href="/docs/entity/{{ entity.api_url }}" class="table-link">
+                            {{ entity.external_api_name }}
+                        </a>
+                    </td>
+                    <td>
+                        <span class="scope-badge scope-{{ entity.api_scope }}">{{ entity.api_scope }}</span>
+                    </td>
+                    <td style="color: var(--text-secondary);">{{ entity.description or 'N/A' }}</td>
+                    <td>{{ entity.field_count if entity.field_count else '—' }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

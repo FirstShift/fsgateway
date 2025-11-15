@@ -1,0 +1,272 @@
+{% extends "base.html" %}
+
+{% block sidebar %}
+<aside class="sidebar">
+    <div class="sidebar-section">
+        <h3 class="sidebar-title">Quick Links</h3>
+        <ul class="sidebar-links">
+            <li><a href="/">Home</a></li>
+            <li><a href="/docs/entities">Browse Entities</a></li>
+            <li><a href="#endpoints" class="active">API Endpoints</a></li>
+            <li><a href="#authentication">Authentication</a></li>
+            <li><a href="#response-format">Response Format</a></li>
+        </ul>
+    </div>
+
+    <div class="sidebar-section">
+        <h3 class="sidebar-title">Tools</h3>
+        <ul class="sidebar-links">
+            <li><a href="/docs" target="_blank">Swagger UI →</a></li>
+            <li><a href="/redoc" target="_blank">ReDoc →</a></li>
+        </ul>
+    </div>
+</aside>
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1 class="page-title">API Reference</h1>
+    <p class="page-subtitle">
+        Programmatic access to FirstShift Gateway entities via REST API
+    </p>
+</div>
+
+<!-- Authentication Section -->
+<section id="authentication" class="content-section">
+    <h2>Authentication</h2>
+    <div class="card">
+        <p style="color: var(--text-secondary); margin-bottom: 1rem;">
+            All API requests require authentication using an access token. Include the token in your request headers:
+        </p>
+        <pre style="background: var(--bg-code); padding: 1rem; border-radius: 0.5rem;"><code>access-token: YOUR_ACCESS_TOKEN</code></pre>
+
+        <h3 style="margin-top: 1.5rem;">Getting an Access Token</h3>
+        <p style="color: var(--text-secondary); margin-bottom: 1rem;">
+            Use the Python SDK's AuthClient or make a direct POST request:
+        </p>
+        <pre style="background: var(--bg-code); padding: 1rem; border-radius: 0.5rem; overflow-x: auto;"><code>POST /api/v1/auth/login
+Content-Type: application/json
+
+{
+  "username": "your_username",
+  "password": "your_password",
+  "tenantId": 7
+}</code></pre>
+    </div>
+</section>
+
+<!-- Response Format Section -->
+<section id="response-format" class="content-section">
+    <h2>Response Format</h2>
+    <div class="card">
+        <p style="color: var(--text-secondary); margin-bottom: 1rem;">
+            All API responses follow a standard format:
+        </p>
+        <pre style="background: var(--bg-code); padding: 1rem; border-radius: 0.5rem; overflow-x: auto;"><code>{
+  "statusCode": 200,
+  "message": "Success message",
+  "data": [...],  // Response data
+  "error": null
+}</code></pre>
+
+        <div style="margin-top: 1.5rem;">
+            <h3>Status Codes</h3>
+            <table style="width: 100%; margin-top: 0.5rem;">
+                <thead>
+                    <tr>
+                        <th>Code</th>
+                        <th>Description</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><code>200</code></td>
+                        <td>Success</td>
+                    </tr>
+                    <tr>
+                        <td><code>400</code></td>
+                        <td>Bad Request - Invalid parameters</td>
+                    </tr>
+                    <tr>
+                        <td><code>401</code></td>
+                        <td>Unauthorized - Invalid or missing token</td>
+                    </tr>
+                    <tr>
+                        <td><code>404</code></td>
+                        <td>Not Found - Entity does not exist</td>
+                    </tr>
+                    <tr>
+                        <td><code>500</code></td>
+                        <td>Internal Server Error</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</section>
+
+<!-- API Endpoints Section -->
+<section id="endpoints" class="content-section">
+    <h2>Available Endpoints</h2>
+
+    <!-- Discovery Endpoints -->
+    <div class="card">
+        <h3 style="margin-top: 0; color: var(--primary);">Discovery API</h3>
+        <p style="color: var(--text-secondary);">Discover available entities and their structure</p>
+
+        <div style="margin-top: 1.5rem;">
+            <h4 style="margin-bottom: 0.5rem;">List All Entities</h4>
+            <code style="background: var(--bg-secondary); padding: 0.5rem; border-radius: 0.25rem; display: inline-block; margin-bottom: 0.5rem;">
+                GET /api/entities
+            </code>
+            <p style="color: var(--text-secondary); margin-top: 0.5rem;">
+                Returns a list of all available entities grouped by scope.
+            </p>
+            <pre style="background: var(--bg-code); padding: 1rem; border-radius: 0.5rem; overflow-x: auto; margin-top: 0.5rem;"><code>curl -H "access-token: YOUR_TOKEN" \
+  https://dev-cloudgateway.firstshift.ai/api/entities</code></pre>
+        </div>
+
+        <div style="margin-top: 1.5rem; padding-top: 1.5rem; border-top: 1px solid var(--border);">
+            <h4 style="margin-bottom: 0.5rem;">Filter by Scope</h4>
+            <code style="background: var(--bg-secondary); padding: 0.5rem; border-radius: 0.25rem; display: inline-block; margin-bottom: 0.5rem;">
+                GET /api/entities/{scope}
+            </code>
+            <p style="color: var(--text-secondary); margin-top: 0.5rem;">
+                Returns entities in a specific scope (ops, data, config, etc.).
+            </p>
+        </div>
+
+        <div style="margin-top: 1.5rem; padding-top: 1.5rem; border-top: 1px solid var(--border);">
+            <h4 style="margin-bottom: 0.5rem;">Search Entities</h4>
+            <code style="background: var(--bg-secondary); padding: 0.5rem; border-radius: 0.25rem; display: inline-block; margin-bottom: 0.5rem;">
+                GET /api/search?q={term}
+            </code>
+            <p style="color: var(--text-secondary); margin-top: 0.5rem;">
+                Search entities by name or description.
+            </p>
+        </div>
+    </div>
+
+    <!-- Metadata Endpoints -->
+    <div class="card">
+        <h3 style="margin-top: 0; color: var(--primary);">Metadata API</h3>
+        <p style="color: var(--text-secondary);">Get field information for entities</p>
+
+        <div style="margin-top: 1.5rem;">
+            <h4 style="margin-bottom: 0.5rem;">Get Entity Metadata</h4>
+            <code style="background: var(--bg-secondary); padding: 0.5rem; border-radius: 0.25rem; display: inline-block; margin-bottom: 0.5rem;">
+                GET /api/entities/{scope}/{entity}/metadata
+            </code>
+            <p style="color: var(--text-secondary); margin-top: 0.5rem;">
+                Returns field metadata including types, primary keys, and constraints.
+            </p>
+            <pre style="background: var(--bg-code); padding: 1rem; border-radius: 0.5rem; overflow-x: auto; margin-top: 0.5rem;"><code>curl -H "access-token: YOUR_TOKEN" \
+  https://dev-cloudgateway.firstshift.ai/api/entities/ops/auditTrail/metadata</code></pre>
+        </div>
+    </div>
+
+    <!-- Query Endpoints -->
+    <div class="card">
+        <h3 style="margin-top: 0; color: var(--primary);">Query API</h3>
+        <p style="color: var(--text-secondary);">Retrieve entity data with filtering and pagination</p>
+
+        <div style="margin-top: 1.5rem;">
+            <h4 style="margin-bottom: 0.5rem;">Query Entity Data</h4>
+            <code style="background: var(--bg-secondary); padding: 0.5rem; border-radius: 0.25rem; display: inline-block; margin-bottom: 0.5rem;">
+                POST /api/entities/{scope}/{entity}/query
+            </code>
+            <p style="color: var(--text-secondary); margin-top: 0.5rem;">
+                Query entity data with filters, sorting, and pagination.
+            </p>
+            <pre style="background: var(--bg-code); padding: 1rem; border-radius: 0.5rem; overflow-x: auto; margin-top: 0.5rem;"><code>curl -X POST \
+  -H "access-token: YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "filters": [
+      {"field": "tenantId", "operation": "=", "value": 7}
+    ],
+    "limit": 10,
+    "offset": 0
+  }' \
+  https://dev-cloudgateway.firstshift.ai/api/entities/ops/auditTrail/query</code></pre>
+
+            <h4 style="margin-top: 1.5rem; margin-bottom: 0.5rem;">Filter Operations</h4>
+            <table style="width: 100%; margin-top: 0.5rem;">
+                <thead>
+                    <tr>
+                        <th>Operation</th>
+                        <th>Description</th>
+                        <th>Example</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><code>=</code></td>
+                        <td>Equals</td>
+                        <td><code>{"field": "id", "operation": "=", "value": 123}</code></td>
+                    </tr>
+                    <tr>
+                        <td><code>!=</code></td>
+                        <td>Not equals</td>
+                        <td><code>{"field": "status", "operation": "!=", "value": "deleted"}</code></td>
+                    </tr>
+                    <tr>
+                        <td><code>&gt;</code></td>
+                        <td>Greater than</td>
+                        <td><code>{"field": "amount", "operation": "&gt;", "value": 100}</code></td>
+                    </tr>
+                    <tr>
+                        <td><code>&lt;</code></td>
+                        <td>Less than</td>
+                        <td><code>{"field": "age", "operation": "&lt;", "value": 30}</code></td>
+                    </tr>
+                    <tr>
+                        <td><code>LIKE</code></td>
+                        <td>Pattern match</td>
+                        <td><code>{"field": "name", "operation": "LIKE", "value": "John%"}</code></td>
+                    </tr>
+                    <tr>
+                        <td><code>IN</code></td>
+                        <td>In list</td>
+                        <td><code>{"field": "status", "operation": "IN", "value": ["active", "pending"]}</code></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Health Endpoint -->
+    <div class="card">
+        <h3 style="margin-top: 0; color: var(--primary);">System API</h3>
+        <p style="color: var(--text-secondary);">System health and monitoring</p>
+
+        <div style="margin-top: 1.5rem;">
+            <h4 style="margin-bottom: 0.5rem;">Health Check</h4>
+            <code style="background: var(--bg-secondary); padding: 0.5rem; border-radius: 0.25rem; display: inline-block; margin-bottom: 0.5rem;">
+                GET /api/health
+            </code>
+            <p style="color: var(--text-secondary); margin-top: 0.5rem;">
+                Returns system health status and entity statistics.
+            </p>
+        </div>
+    </div>
+</section>
+
+<!-- Interactive Tools -->
+<section class="content-section">
+    <h2>Interactive API Documentation</h2>
+    <div class="card" style="background: var(--primary-light); border-left: 4px solid var(--primary);">
+        <p style="margin-bottom: 1rem;">
+            Explore and test the API interactively using these tools:
+        </p>
+        <div style="display: flex; gap: 1rem;">
+            <a href="/docs" class="filter-pill" style="background: var(--primary); color: white; text-decoration: none;">
+                Open Swagger UI →
+            </a>
+            <a href="/redoc" class="filter-pill" style="background: var(--secondary); color: white; text-decoration: none;">
+                Open ReDoc →
+            </a>
+        </div>
+    </div>
+</section>
+{% endblock %}
