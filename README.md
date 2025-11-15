@@ -81,6 +81,8 @@ uv run fsgw server
 | Document | Description |
 |----------|-------------|
 | **[QUICKSTART.md](QUICKSTART.md)** | Complete usage guide with examples |
+| **[docs/CURRENT_STATUS.md](docs/CURRENT_STATUS.md)** | Current project status and progress |
+| **[docs/phases/SDK_DEVELOPMENT_CHECKLIST.md](docs/phases/SDK_DEVELOPMENT_CHECKLIST.md)** | Development checklist and roadmap |
 | **[deployment/SETUP_GUIDE.md](deployment/SETUP_GUIDE.md)** | Deploy docs to remote server |
 | **[deployment/ARCHITECTURE.md](deployment/ARCHITECTURE.md)** | System architecture and diagrams |
 | [deployment/DEPLOYMENT.md](deployment/DEPLOYMENT.md) | Advanced deployment options |
@@ -103,7 +105,10 @@ fsgateway/
 │   ├── SETUP_GUIDE.md             # Deployment guide
 │   ├── ARCHITECTURE.md            # Architecture docs
 │   └── DEPLOYMENT.md              # Advanced docs
-├── docs/                          # Additional documentation
+├── docs/                          # Documentation
+│   ├── CURRENT_STATUS.md          # Current project status
+│   ├── phases/                    # Development phases
+│   └── guides/                    # User guides
 ├── tests/                         # Test suite
 ├── .env.example                   # Example configuration
 ├── pyproject.toml                 # Project metadata

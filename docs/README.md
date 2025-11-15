@@ -1,208 +1,113 @@
 # FirstShift Gateway SDK Documentation
 
-This directory contains all documentation for the FSGW SDK project.
+This directory contains internal documentation for the FSGW SDK project.
 
-## Directory Structure
+## Documentation Index
+
+### For Users
+- **[../QUICKSTART.md](../QUICKSTART.md)** - Quick start guide with examples
+- **[../README.md](../README.md)** - Main project overview and features
+
+### For Developers
+
+#### Project Status
+- **[CURRENT_STATUS.md](CURRENT_STATUS.md)** - Current project state and what's working
+- **[phases/SDK_DEVELOPMENT_CHECKLIST.md](phases/SDK_DEVELOPMENT_CHECKLIST.md)** - Development roadmap and progress
+
+#### Phase Documentation
+- **[phases/PHASE1_COMPLETE.md](phases/PHASE1_COMPLETE.md)** - Phase 1: Core Models completion report
+- **[phases/PHASE2_COMPLETE.md](phases/PHASE2_COMPLETE.md)** - Phase 2: Client Infrastructure completion report
+
+#### API Documentation
+- **[API_DISCOVERY_SUMMARY.md](API_DISCOVERY_SUMMARY.md)** - Complete list of 239+ discovered entities
+- **[api/FirstShift_Metadata_Query_API_Doc.xml](api/FirstShift_Metadata_Query_API_Doc.xml)** - Original API specification
+
+### For Deployment
+- **[../deployment/SETUP_GUIDE.md](../deployment/SETUP_GUIDE.md)** - Step-by-step deployment guide
+- **[../deployment/ARCHITECTURE.md](../deployment/ARCHITECTURE.md)** - System architecture diagrams
+- **[../deployment/DEPLOYMENT.md](../deployment/DEPLOYMENT.md)** - Advanced deployment options
+
+## Quick Links
+
+### Running the SDK
+
+**Python SDK:**
+```python
+from fsgw.client import FSGWClient
+
+async with FSGWClient(...) as client:
+    entities = await client.list_apis()
+    metadata = await client.get_metadata("ops/auditTrail")
+    results = await client.query("ops/auditTrail")
+```
+
+**CLI:**
+```bash
+uv run fsgw interactive    # Interactive REPL
+uv run fsgw entities       # List all entities
+uv run fsgw info ops/auditTrail  # Get details
+```
+
+**Documentation Server:**
+```bash
+uv run fsgw server  # http://localhost:8000
+```
+
+## Documentation Organization
 
 ```
 docs/
-├── phases/          # Development phase documentation
+├── README.md                      # This file
+├── CURRENT_STATUS.md              # Current project status
+├── API_DISCOVERY_SUMMARY.md       # Entity discovery results
+├── phases/                        # Development phases
+│   ├── SDK_DEVELOPMENT_CHECKLIST.md
 │   ├── PHASE1_COMPLETE.md
-│   ├── PHASE2_COMPLETE.md
-│   └── SDK_DEVELOPMENT_CHECKLIST.md
-├── guides/          # User and developer guides
-│   ├── GETTING_STARTED.md
-│   ├── SETUP.md
-│   ├── PROJECT_SUMMARY.md
-│   └── CHECKLIST.md
-├── api/             # API documentation
-│   ├── API_DISCOVERY_SUMMARY.md
-│   └── FirstShift_Metadata_Query_API_Doc.xml
-└── README.md        # This file
+│   └── PHASE2_COMPLETE.md
+└── api/                           # API specifications
+    └── FirstShift_Metadata_Query_API_Doc.xml
 ```
 
-## Documentation Formats
+## What's Complete ✅
 
-### 1. Interactive Web Documentation
+- ✅ **Phase 1**: Core Models (Pydantic models with type safety)
+- ✅ **Phase 2**: Client Infrastructure (HTTP client, auth, error handling)
+- ✅ **Phase 3**: API Methods (Discovery, Metadata, Query)
+- ✅ **Phase 6**: Error Handling (11 custom exceptions)
+- ✅ **Phase 3.5**: CLI & Documentation Website (bonus)
 
-The SDK includes a comprehensive FastAPI-based documentation server that auto-discovers all 239+ entities:
+## What's Next
 
-**Start the server:**
-```bash
-fsgw-server
+See [CURRENT_STATUS.md](CURRENT_STATUS.md) for:
+- Detailed completion status
+- Usage examples
+- Next steps and priorities
+- Optional enhancements
 
-# Or with custom settings
-fsgw server --host 0.0.0.0 --port 8000 --reload
-```
+## Key Statistics
 
-**Access the documentation:**
-- Landing page: http://localhost:8000
-- Swagger UI: http://localhost:8000/docs
-- ReDoc: http://localhost:8000/redoc
+- **Total Lines**: ~3,500+ lines of code
+- **Entities Available**: 239+ across 6 scopes
+- **Scopes**: ops, data, config, metadata, rbac, globalmeta
+- **Test Coverage**: Integration tests complete, unit tests pending
 
-**Features:**
-- Browse all entities by scope
-- View detailed field metadata
-- Interactive query examples with curl commands
-- Search entities by name or description
-- Live API health monitoring
+## Contributing to Documentation
 
-### 2. CLI Documentation
+When updating documentation:
 
-Query documentation directly from the command line:
-
-```bash
-# List all entities
-fsgw entities
-
-# Filter by scope
-fsgw entities --scope ops
-
-# Get entity details
-fsgw info ops/auditTrail
-
-# Search entities
-fsgw search audit
-
-# Ask questions in natural language
-fsgw ask "What entities are in the ops scope?"
-fsgw ask "Show me audit trail fields"
-fsgw ask "How do I query data?"
-```
-
-### 3. Static Documentation
-
--  **[Phase Documentation](phases/)**: Development progress and completion reports
-- **[User Guides](guides/)**: Getting started and setup instructions
-- **[API Discovery](api/)**: Complete list of discovered entities
-
-## Quick Start
-
-1. **Set up credentials:**
-   ```bash
-   export FSGW_USERNAME="your-username"
-   export FSGW_PASSWORD="your-password"
-   export FSGW_TENANT_ID="7"
-   export FSGW_GATEWAY_URL="https://dev-cloudgateway.firstshift.ai"
-   ```
-
-2. **Start documentation server:**
-   ```bash
-   fsgw-server
-   ```
-
-3. **Browse entities:**
-   - Visit http://localhost:8000
-   - Or use CLI: `fsgw entities`
-
-4. **Get entity metadata:**
-   ```bash
-   fsgw info ops/auditTrail
-   ```
-
-5. **Query data:**
-   ```bash
-   fsgw query ops/auditTrail --limit 10
-   ```
-
-## API Endpoints
-
-The documentation server provides the following REST API endpoints:
-
-### Discovery
-- `GET /entities` - List all entities grouped by scope
-- `GET /entities/{scope}` - Filter entities by scope
-- `GET /search?q={term}` - Search entities
-
-### Metadata
-- `GET /entities/{scope}/{entity}/metadata` - Get field information
-- `GET /entities/{scope}/{entity}/query` - Get query examples
-
-### Health
-- `GET /health` - Server and API health check
-
-## Entity Organization
-
-Entities are organized into 6 scopes:
-
-1. **config** - Configuration entities
-2. **data** - Data entities
-3. **globalmeta** - Global metadata
-4. **metadata** - Metadata entities
-5. **ops** - Operations entities (audit trail, etc.)
-6. **rbac** - Role-based access control
-
-## Usage Examples
-
-### Python SDK
-```python
-from fsgw import FSGWClient, QueryRequest
-
-async with FSGWClient(
-    gateway_url="https://dev-cloudgateway.firstshift.ai",
-    username="user",
-    password="pass",
-    tenant_id=7,
-) as client:
-    # List entities
-    entities = await client.list_apis()
-
-    # Get metadata
-    metadata = await client.get_metadata("ops/auditTrail")
-
-    # Query data
-    query = QueryRequest().add_filter("tenantId", "=", 7).limit(10)
-    results = await client.query("ops/auditTrail", query)
-```
-
-### CLI
-```bash
-# List all entities
-fsgw entities
-
-# Get entity info
-fsgw info ops/auditTrail
-
-# Query data
-fsgw query ops/auditTrail --filter tenantId=7 --limit 10
-
-# Search
-fsgw search audit
-
-# Ask questions
-fsgw ask "What entities are in ops scope?"
-```
-
-### REST API
-```bash
-# List all entities
-curl http://localhost:8000/entities
-
-# Get metadata
-curl http://localhost:8000/entities/ops/auditTrail/metadata
-
-# Search
-curl "http://localhost:8000/search?q=audit"
-```
-
-## Development Documentation
-
-- [SDK Development Checklist](phases/SDK_DEVELOPMENT_CHECKLIST.md) - Complete roadmap
-- [Phase 1: Core Models](phases/PHASE1_COMPLETE.md) - Pydantic models and validation
-- [Phase 2: Client Infrastructure](phases/PHASE2_COMPLETE.md) - HTTP client and authentication
-
-## Contributing
-
-When adding new documentation:
-
-1. Place phase documentation in `phases/`
-2. Place user guides in `guides/`
-3. Place API documentation in `api/`
-4. Update this README with new sections
+1. **Status Updates**: Update [CURRENT_STATUS.md](CURRENT_STATUS.md)
+2. **Phase Progress**: Update [phases/SDK_DEVELOPMENT_CHECKLIST.md](phases/SDK_DEVELOPMENT_CHECKLIST.md)
+3. **User Guides**: Update [../QUICKSTART.md](../QUICKSTART.md) or [../README.md](../README.md)
+4. **This Index**: Update this README.md to reflect new documentation
 
 ## Support
 
-For issues or questions:
-- GitHub Issues: https://github.com/FirstShift/fsgateway/issues
-- Documentation Server: http://localhost:8000
-- CLI Help: `fsgw --help`
+For questions about the project:
+- Check [CURRENT_STATUS.md](CURRENT_STATUS.md) for current state
+- Review [phases/SDK_DEVELOPMENT_CHECKLIST.md](phases/SDK_DEVELOPMENT_CHECKLIST.md) for roadmap
+- See [../QUICKSTART.md](../QUICKSTART.md) for usage examples
+- Try the interactive docs: `uv run fsgw server`
+
+---
+
+**Last Updated**: 2025-11-15

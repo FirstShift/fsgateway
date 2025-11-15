@@ -131,15 +131,17 @@ fsgateway/
 │   └── exceptions.py          # Custom exceptions
 ├── deployment/                 # Deployment infrastructure
 ├── docs/                       # Documentation
-│   └── phases/                 # Development checklists
+│   ├── CURRENT_STATUS.md      # This file (project status)
+│   ├── README.md              # Documentation index
+│   ├── phases/                # Development checklists
+│   └── api/                   # API specifications
 ├── tests/                      # Test suite
 │   └── integration/           # Integration tests
 ├── .env                        # Configuration (not in git)
 ├── .env.example               # Example configuration
 ├── pyproject.toml             # Project metadata
-├── README.md                  # Overview
-├── QUICKSTART.md              # Usage guide
-└── CURRENT_STATUS.md          # This file
+├── README.md                  # Main project overview
+└── QUICKSTART.md              # Usage guide
 ```
 
 ## Key Files
