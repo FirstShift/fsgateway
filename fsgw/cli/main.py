@@ -8,10 +8,15 @@ import asyncio
 import json
 import os
 import sys
+from pathlib import Path
 from typing import Any, Optional
 
 import httpx
 import typer
+from dotenv import load_dotenv
+from prompt_toolkit import PromptSession
+from prompt_toolkit.completion import WordCompleter
+from prompt_toolkit.history import FileHistory
 from rich.console import Console
 from rich.markdown import Markdown
 from rich.panel import Panel
@@ -19,6 +24,11 @@ from rich.table import Table
 
 from fsgw import __version__
 from fsgw.client import FSGWClient
+
+# Load .env file if it exists
+env_path = Path.cwd() / ".env"
+if env_path.exists():
+    load_dotenv(env_path)
 
 app = typer.Typer(
     name="fsgw",
@@ -504,8 +514,319 @@ def server(
 
 @app.command()
 def interactive() -> None:
-    """Start interactive mode (not implemented yet)."""
-    console.print("[yellow]Interactive mode coming soon![/yellow]")
+    """Start interactive REPL mode for exploring the API.
+
+    Commands:
+      entities [scope]     - List entities
+      info <api_url>       - Get entity details
+      search <term>        - Search entities
+      ask <question>       - Ask a question
+      query <api_url>      - Query an entity
+      metadata <api_url>   - Get metadata
+      help                 - Show this help
+      exit/quit            - Exit interactive mode
+    """
+
+    # Setup prompt session with history
+    history_file = Path.home() / ".fsgw_history"
+    session = PromptSession(
+        history=FileHistory(str(history_file)),
+        completer=WordCompleter(
+            ["entities", "info", "search", "ask", "query", "metadata", "help", "exit", "quit"],
+            ignore_case=True,
+        ),
+    )
+
+    console.print(Panel.fit(
+        "[bold cyan]FirstShift Gateway SDK - Interactive Mode[/bold cyan]\n\n"
+        "Type [green]help[/green] for available commands or [green]exit[/green] to quit.",
+        title="🚀 FSGW Interactive Shell",
+    ))
+
+    while True:
+        try:
+            # Get user input
+            user_input = session.prompt("\n[fsgw] > ", default="")
+
+            if not user_input.strip():
+                continue
+
+            parts = user_input.strip().split(maxsplit=1)
+            command = parts[0].lower()
+            args = parts[1] if len(parts) > 1 else ""
+
+            # Handle commands
+            if command in ["exit", "quit"]:
+                console.print("[yellow]Goodbye![/yellow]")
+                break
+
+            elif command == "help":
+                console.print(Panel(Markdown("""
+                **Available Commands:**
+
+                - `entities [scope]` - List all entities or filter by scope
+                - `info <api_url>` - Get detailed information about an entity
+                - `search <term>` - Search entities by keyword
+                - `ask "<question>"` - Ask a natural language question
+                - `query <api_url>` - Query data from an entity
+                - `metadata <api_url>` - Get metadata for an entity
+                - `help` - Show this help message
+                - `exit` or `quit` - Exit interactive mode
+
+                **Examples:**
+                ```
+                entities ops
+                info ops/auditTrail
+                search audit
+                ask "What entities are in ops scope?"
+                query ops/auditTrail
+                metadata ops/auditTrail
+                ```
+                """), title="Help"))
+
+            elif command == "entities":
+                scope = args if args else None
+                if scope:
+                    console.print(f"[cyan]Listing entities in scope: {scope}[/cyan]")
+                    _run_entities(scope)
+                else:
+                    console.print("[cyan]Listing all entities...[/cyan]")
+                    _run_entities(None)
+
+            elif command == "info":
+                if not args:
+                    console.print("[red]Usage: info <api_url>[/red]")
+                    console.print("[yellow]Example: info ops/auditTrail[/yellow]")
+                else:
+                    _run_info(args)
+
+            elif command == "search":
+                if not args:
+                    console.print("[red]Usage: search <term>[/red]")
+                    console.print("[yellow]Example: search audit[/yellow]")
+                else:
+                    _run_search(args)
+
+            elif command == "ask":
+                if not args:
+                    console.print("[red]Usage: ask <question>[/red]")
+                    console.print("[yellow]Example: ask \"What entities are in ops scope?\"[/yellow]")
+                else:
+                    _run_ask(args)
+
+            elif command == "query":
+                if not args:
+                    console.print("[red]Usage: query <api_url>[/red]")
+                    console.print("[yellow]Example: query ops/auditTrail[/yellow]")
+                else:
+                    _run_query(args)
+
+            elif command == "metadata":
+                if not args:
+                    console.print("[red]Usage: metadata <api_url>[/red]")
+                    console.print("[yellow]Example: metadata ops/auditTrail[/yellow]")
+                else:
+                    _run_metadata(args)
+
+            else:
+                console.print(f"[red]Unknown command: {command}[/red]")
+                console.print("[yellow]Type 'help' for available commands[/yellow]")
+
+        except KeyboardInterrupt:
+            console.print("\n[yellow]Use 'exit' or 'quit' to leave interactive mode[/yellow]")
+            continue
+        except EOFError:
+            console.print("\n[yellow]Goodbye![/yellow]")
+            break
+        except Exception as e:
+            console.print(f"[red]Error: {str(e)}[/red]")
+
+
+def _run_entities(scope: Optional[str]) -> None:
+    """Helper to run entities command."""
+    async def _list() -> None:
+        async with get_client() as client:
+            if scope:
+                entities_list = await client.list_apis_by_scope(scope)
+                console.print(f"\n[green]Found {len(entities_list)} entities in {scope}:[/green]")
+                for entity in sorted(entities_list, key=lambda x: x.api_url)[:20]:
+                    console.print(f"  • {entity.api_url}")
+                if len(entities_list) > 20:
+                    console.print(f"  ... and {len(entities_list) - 20} more")
+            else:
+                entities_list = await client.list_apis()
+                by_scope = {}
+                for entity in entities_list:
+                    if entity.api_scope not in by_scope:
+                        by_scope[entity.api_scope] = 0
+                    by_scope[entity.api_scope] += 1
+
+                table = Table(title="Entities by Scope")
+                table.add_column("Scope", style="cyan")
+                table.add_column("Count", style="green")
+                for scope_name in sorted(by_scope.keys()):
+                    table.add_row(scope_name, str(by_scope[scope_name]))
+                console.print(table)
+                console.print(f"\n[green]Total: {len(entities_list)} entities[/green]")
+
+    asyncio.run(_list())
+
+
+def _run_info(api_url: str) -> None:
+    """Helper to run info command."""
+    async def _get_info() -> None:
+        async with get_client() as client:
+            try:
+                entity = await client.get_api_info(api_url)
+                metadata = await client.get_metadata(api_url)
+
+                console.print(f"\n[bold cyan]{entity.external_api_name}[/bold cyan]")
+                console.print(f"[green]API URL:[/green] {entity.api_url}")
+                console.print(f"[green]Scope:[/green] {entity.api_scope}")
+                if entity.description:
+                    console.print(f"[green]Description:[/green] {entity.description}")
+                console.print(f"\n[green]Fields:[/green] {len(metadata)} total")
+
+                for field in metadata[:10]:
+                    pk = " [magenta](PK)[/magenta]" if field.is_primary_key else ""
+                    console.print(f"  • {field.field_name}: {field.type}{pk}")
+
+                if len(metadata) > 10:
+                    console.print(f"  ... and {len(metadata) - 10} more fields")
+
+            except Exception as e:
+                console.print(f"[red]Error: {str(e)}[/red]")
+
+    asyncio.run(_get_info())
+
+
+def _run_search(term: str) -> None:
+    """Helper to run search command."""
+    async def _search() -> None:
+        async with get_client() as client:
+            entities_list = await client.list_apis()
+            term_lower = term.lower()
+            results = [
+                e for e in entities_list
+                if term_lower in e.api_url.lower()
+                or term_lower in e.external_api_name.lower()
+                or (e.description and term_lower in e.description.lower())
+            ]
+
+            if results:
+                console.print(f"\n[green]Found {len(results)} matches:[/green]")
+                for entity in results[:20]:
+                    console.print(f"  • [cyan]{entity.api_url}[/cyan] - {entity.external_api_name}")
+                if len(results) > 20:
+                    console.print(f"  ... and {len(results) - 20} more")
+            else:
+                console.print(f"[yellow]No entities found matching '{term}'[/yellow]")
+
+    asyncio.run(_search())
+
+
+def _run_ask(question: str) -> None:
+    """Helper to run ask command."""
+    # Remove quotes if present
+    question = question.strip('"\'')
+
+    async def _ask() -> None:
+        question_lower = question.lower()
+
+        # Intent: List entities in a scope
+        if any(word in question_lower for word in ["entities in", "what entities", "list entities"]):
+            for scope in ["ops", "data", "config", "metadata", "globalmeta", "rbac"]:
+                if scope in question_lower:
+                    console.print(f"[cyan]Finding entities in {scope} scope...[/cyan]")
+                    _run_entities(scope)
+                    return
+
+        # Intent: Get metadata
+        if any(word in question_lower for word in ["fields", "metadata", "schema", "columns"]):
+            async with get_client() as client:
+                entities_list = await client.list_apis()
+                for entity in entities_list:
+                    if entity.api_url.lower() in question_lower or entity.external_api_name.lower() in question_lower:
+                        _run_info(entity.api_url)
+                        return
+
+        # Intent: How to query
+        if any(word in question_lower for word in ["how to query", "how do i query", "query example"]):
+            console.print(Panel(Markdown("""
+            **Querying Entities:**
+
+            In interactive mode: `query <api_url>`
+
+            From command line:
+            ```bash
+            fsgw query ops/auditTrail --limit 10
+            fsgw query ops/auditTrail --filter tenantId=7
+            ```
+            """), title="Query Help"))
+            return
+
+        # Default: search
+        _run_search(question)
+
+    asyncio.run(_ask())
+
+
+def _run_query(api_url: str) -> None:
+    """Helper to run query command."""
+    async def _query() -> None:
+        async with get_client() as client:
+            try:
+                from fsgw import QueryRequest
+                query = QueryRequest().limit(5)
+                results = await client.query(api_url, query)
+
+                console.print(f"\n[green]Query results for {api_url}:[/green]")
+                console.print(f"[yellow]Showing first 5 records[/yellow]\n")
+
+                if results.results:
+                    for i, row in enumerate(results.results, 1):
+                        console.print(f"[cyan]Record {i}:[/cyan]")
+                        for key, value in list(row.items())[:5]:
+                            console.print(f"  {key}: {value}")
+                        if len(row) > 5:
+                            console.print(f"  ... and {len(row) - 5} more fields")
+                        console.print()
+                else:
+                    console.print("[yellow]No results found[/yellow]")
+
+            except Exception as e:
+                console.print(f"[red]Error: {str(e)}[/red]")
+
+    asyncio.run(_query())
+
+
+def _run_metadata(api_url: str) -> None:
+    """Helper to run metadata command."""
+    async def _get_metadata() -> None:
+        async with get_client() as client:
+            try:
+                metadata = await client.get_metadata(api_url)
+
+                table = Table(title=f"Metadata: {api_url}")
+                table.add_column("Field", style="cyan")
+                table.add_column("Type", style="green")
+                table.add_column("PK", style="magenta")
+                table.add_column("Nullable", style="yellow")
+
+                for field in metadata:
+                    table.add_row(
+                        field.field_name,
+                        field.type,
+                        "✓" if field.is_primary_key else "",
+                        "✓" if field.field_can_be_null else "",
+                    )
+
+                console.print(table)
+
+            except Exception as e:
+                console.print(f"[red]Error: {str(e)}[/red]")
+
+    asyncio.run(_get_metadata())
 
 
 if __name__ == "__main__":

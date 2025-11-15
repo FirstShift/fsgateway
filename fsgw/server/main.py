@@ -8,9 +8,11 @@ metadata, and usage examples. Auto-discovers all entities from the gateway.
 import os
 from collections import defaultdict
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any
 
 import uvicorn
+from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -19,6 +21,11 @@ from pydantic import BaseModel
 from fsgw import __version__
 from fsgw.client import FSGWClient
 from fsgw.models import EndpointEntity, FieldMetadata, QueryRequest
+
+# Load .env file if it exists
+env_path = Path.cwd() / ".env"
+if env_path.exists():
+    load_dotenv(env_path)
 
 # Global state
 client: FSGWClient | None = None
