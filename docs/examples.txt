@@ -1,0 +1,113 @@
+/*
+ * Copyright 2025 Weavers @ Eternal Loom. All rights reserved.
+ * Use of this software is governed by the license that can be
+ * found in LICENSE file in the source repository.
+ */
+
+API1 examples:
+
+Curl Example (Basic)
+curl -X GET "{{baseUrl}}/api/v1/meta/apis" \
+  -H "access-token: {{accessToken}}" \
+  -H "Content-Type: application/json" 
+Curl Example (Fully Annotated Enterprise Version)
+curl -X GET "{{baseUrl}}/api/v1/meta/apis" \
+  -H "access-token: {{accessToken}}" \   # Required JWT for tenant isolation
+  -H "Content-Type: application/json" \  # Ensures correct handling of JSON
+  --location                           # Enables redirects (optional)
+
+Sample Response With Detailed Annotation
+{
+  "data": [
+    {
+      "apiScope": "ops",              // category of the entity
+      "apiUrl": "ops/auditTrail",     // used to construct metadata & query URLs
+      "externalAPIName": "auditTrail",
+      "description": "Audit trail table capturing all audit_id based changes."
+    },
+    {
+      "apiScope": "config",
+      "apiUrl": "config/configDataEntities",
+      "externalAPIName": "configDataEntities",
+      "description": "Contains metadata defining all configuration entities."
+    }
+  ]
+}
+
+API2 examples:
+URL Construction Rule
+apiUrl = ops/auditTrail  
+→ GET /api/v1/meta/ops/auditTrail
+
+apiUrl = config/configDataEntities  
+→ GET /api/v1/meta/config/configDataEntities
+Curl Example (Basic)
+curl -X GET "{{baseUrl}}/api/v1/meta/config/configDataEntities" \
+  -H "access-token: {{accessToken}}" 
+Curl Example (Advanced Annotated Version)
+curl -X GET "{{baseUrl}}/api/v1/meta/config/configDataEntities" \
+  -H "access-token: {{accessToken}}" \   # Authentication
+  -H "Content-Type: application/json" \  # Metadata format
+  --verbose                              # Shows full request/response
+
+Sample Response (Annotated)
+{
+  "data": [
+    {
+      "fieldName": "dataEntityId",
+      "type": "Int",
+      "isPrimaryKey": true,
+      "isAutoIncrement": true,
+      "fieldCanbeNull": false
+    },
+    {
+      "fieldName": "entityName",
+      "type": "String",
+      "fieldCanbeNull": false
+    }
+  ],
+  "message": "Columns retrieved successfully!",
+  "statusCode": 200,
+  "status": "SUCCESS"
+}
+
+API3 examples:
+
+Curl Example (Basic)
+curl -X POST "{{baseUrl}}/api/v1/config/configDataEntities/query" \
+  -H "access-token: {{accessToken}}" \
+  -H "Content-Type: application/json" \
+  -d '{ ... }'
+Curl Example (Fully Annotated)
+curl -X POST "{{baseUrl}}/api/v1/config/configDataEntities/query" \
+  -H "access-token: {{accessToken}}" \   # identifies tenant, user, roles
+  -H "Content-Type: application/json" \  # ensures JSON body is parsed
+  -d '{
+        "criteriaList": [
+          { "key": "tenant_id", "operation": "=", "value": "7" },           
+          { "prefixOperation": "AND", "key": "ENTITY_NAME", "operation": "=", "value": "PRODUCT" }
+        ],
+        "orderByList": [
+          { "column": "ENTITY_NAME", "sortOrder": "ASC" }
+        ],
+        "selectFieldsList": [],     # empty = full projection
+        "offset": 0,
+        "limit": 20
+      }'
+
+Full Response (Annotated)
+{
+  "data": [
+    {
+      "auditId": 1276960,           // audit tracking link
+      "entityName": "Product",      // business-friendly label
+      "entityType": "DIMENSION_MASTER_MANAGEMENT",
+      "tenantId": 7,                // auto-enforced via JWT
+      "status": "active"
+    }
+  ],
+  "message": "Data retrieved successfully!",
+  "statusCode": 200,
+  "status": "SUCCESS"
+}
+
