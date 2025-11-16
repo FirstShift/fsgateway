@@ -1,136 +1,157 @@
 # FSGW Documentation Deployment
 
-This directory contains all deployment-related files and documentation for deploying the FSGW documentation website to your remote VM.
+This directory contains scripts and documentation for deploying the FSGW documentation server to a remote VM.
 
-## Files
+## 🎉 Current Status
 
-| File | Description |
-|------|-------------|
-| **setup_deployment.sh** | Interactive setup script - test connection & save config |
-| **deploy.sh** | Manual deployment script (for on-VM deployment) |
-| **SETUP_GUIDE.md** | Complete step-by-step deployment guide |
-| **ARCHITECTURE.md** | System architecture and diagrams |
-| **DEPLOYMENT.md** | Advanced deployment options |
-| **README_DEPLOYMENT.md** | Quick reference guide |
+**✅ DEPLOYED AND LIVE**
+
+**Public URL**: http://52.53.245.194:8100
+
+The documentation website is running on the staging server and is publicly accessible.
+
+## Quick Links
+
+| Document | Purpose |
+|----------|---------|
+| **[SETUP_GUIDE.md](SETUP_GUIDE.md)** | Complete deployment guide with all commands |
+| **[ARCHITECTURE.md](ARCHITECTURE.md)** | System architecture and diagrams |
+| **[DEPLOYMENT.md](DEPLOYMENT.md)** | Advanced deployment options |
+| **[deploy_to_staging.sh](deploy_to_staging.sh)** | Automated deployment script |
 
 ## Quick Start
 
-### Option 1: Automated Setup (Recommended)
+### Access the Documentation
+Simply open in your browser:
+**http://52.53.245.194:8100**
 
-Run the interactive setup script:
+No SSH tunnel or VPN required.
 
+### Redeploy/Update
 ```bash
-cd /Users/al/Projects/firstshift/fsgateway
-./deployment/setup_deployment.sh
+./deployment/deploy_to_staging.sh
 ```
 
-This will:
-1. Prompt for your VM connection details (IP, username, SSH key path)
-2. Test the SSH connection
-3. Check the VM environment
-4. Save configuration securely
-5. Create credentials file
-6. Generate automated deployment script
-
-Then deploy with:
-
+### View Logs
 ```bash
-./deployment/deploy_remote.sh
+ssh -i .secrets/dev-planlytx.pem ubuntu@52.53.245.194 "pm2 logs fsgw-docs"
 ```
 
-### Option 2: Manual Setup
-
-If you prefer to set everything up manually, see [SETUP_GUIDE.md](SETUP_GUIDE.md).
-
-## Your Setup
-
-Based on your current configuration:
-
-- **SSH Key**: `.secrets/sandiph (1).pem` (already in place ✓)
-- **Target**: Remote VM where forecast_agent runs
-- **Port**: 8100 (FSGW docs will run here)
-
-## What Happens During Deployment
-
-1. **Connection Test**: Verifies SSH access with your key
-2. **Environment Check**: Checks for PM2, uv, forecast_agent
-3. **File Transfer**: Copies FSGW code to `/home/ubuntu/fsgateway`
-4. **Dependencies**: Installs uv and syncs Python packages
-5. **PM2 Service**: Starts `fsgw-docs` on port 8100
-6. **Health Check**: Verifies service is responding
-
-## After Deployment
-
-Access the documentation:
-
+### Check Status
 ```bash
-# Create SSH tunnel
-ssh -i .secrets/sandiph\ \(1\).pem -L 8100:localhost:8100 <user>@<ip>
+ssh -i .secrets/dev-planlytx.pem ubuntu@52.53.245.194 "pm2 status"
+```
 
-# Then open in browser
-open http://localhost:8100
+## Server Details
+
+- **Host**: 52.53.245.194
+- **User**: ubuntu
+- **SSH Key**: `.secrets/dev-planlytx.pem`
+- **Project Path**: `/home/ubuntu/fsgateway/`
+- **Service Port**: 8100
+- **Process Manager**: PM2
+- **Service Name**: `fsgw-docs`
+
+## Files in This Directory
+
+```
+deployment/
+├── README.md                  # This file
+├── SETUP_GUIDE.md            # Complete deployment guide
+├── ARCHITECTURE.md           # System architecture
+├── DEPLOYMENT.md             # Advanced deployment options
+├── deploy_to_staging.sh      # Automated deployment script
+├── deploy.sh                 # Legacy deployment script
+└── setup_deployment.sh       # Legacy setup script
+```
+
+## Deployment Architecture
+
+```
+Local Machine                      Remote Server (52.53.245.194)
+─────────────                      ──────────────────────────────
+
+fsgateway/                         /home/ubuntu/fsgateway/
+├── fsgw/                   ───▶   ├── fsgw/
+├── .env.example                   ├── .env (created from config)
+├── deployment/                    ├── .venv/ (uv managed)
+│   └── deploy_to_staging.sh      └── [all project files]
+└── .secrets/
+    ├── dev-planlytx.pem                    │
+    └── deployment_config.sh                │
+                                            ▼
+         rsync via SSH              PM2 Process Manager
+                                            │
+                                            ▼
+                                    fsgw-docs service
+                                    (Port 8100)
+                                            │
+                                            ▼
+                              Public HTTP Access
+                              http://52.53.245.194:8100
+```
+
+## Common Tasks
+
+### Management
+```bash
+# View live logs
+ssh -i .secrets/dev-planlytx.pem ubuntu@52.53.245.194 "pm2 logs fsgw-docs"
+
+# Restart service
+ssh -i .secrets/dev-planlytx.pem ubuntu@52.53.245.194 "pm2 restart fsgw-docs"
+
+# Stop service
+ssh -i .secrets/dev-planlytx.pem ubuntu@52.53.245.194 "pm2 stop fsgw-docs"
+
+# Check all PM2 services
+ssh -i .secrets/dev-planlytx.pem ubuntu@52.53.245.194 "pm2 status"
+```
+
+### Testing
+```bash
+# Test HTTP access
+curl http://52.53.245.194:8100/api/health
+
+# Test SSH connection
+ssh -i .secrets/dev-planlytx.pem ubuntu@52.53.245.194 "echo 'SSH OK'"
+```
+
+### Updates
+```bash
+# Full redeploy (recommended)
+./deployment/deploy_to_staging.sh
+
+# Quick restart (after manual file changes)
+ssh -i .secrets/dev-planlytx.pem ubuntu@52.53.245.194 "pm2 restart fsgw-docs"
 ```
 
 ## Troubleshooting
 
-### SSH Key Issues
+If you encounter issues:
 
-If you get permission errors:
+1. **Check [SETUP_GUIDE.md](SETUP_GUIDE.md)** - Contains detailed troubleshooting section
+2. **View service logs** - `ssh ... "pm2 logs fsgw-docs"`
+3. **Verify service status** - `ssh ... "pm2 status"`
+4. **Test connectivity** - `curl http://52.53.245.194:8100/api/health`
+5. **Redeploy** - `./deployment/deploy_to_staging.sh`
 
-```bash
-chmod 600 .secrets/sandiph\ \(1\).pem
-```
+## Security
 
-### Connection Issues
+- Server is **publicly accessible** on port 8100
+- SSH key required for server management
+- Credentials stored in `.env` on server (not in git)
+- Independent service that doesn't affect forecast_agent
 
-Test manually:
+## Documentation
 
-```bash
-ssh -i .secrets/sandiph\ \(1\).pem <user>@<ip>
-```
-
-### Deployment Issues
-
-Check logs on VM:
-
-```bash
-ssh -i .secrets/sandiph\ \(1\).pem <user>@<ip> 'pm2 logs fsgw-docs'
-```
-
-## PM2 Management
-
-After deployment, manage the service:
-
-```bash
-# Check status
-ssh <user>@<ip> 'pm2 status'
-
-# View logs
-ssh <user>@<ip> 'pm2 logs fsgw-docs'
-
-# Restart
-ssh <user>@<ip> 'pm2 restart fsgw-docs'
-
-# Stop
-ssh <user>@<ip> 'pm2 stop fsgw-docs'
-
-# Remove
-ssh <user>@<ip> 'pm2 delete fsgw-docs && pm2 save'
-```
-
-## Safety
-
-This deployment is **100% safe** for your forecast_agent:
-
-- ✅ Different port (8100 vs 5431/3000)
-- ✅ Separate PM2 process
-- ✅ Independent Python environment
-- ✅ Separate logs
-- ✅ Can be removed anytime without affecting forecast_agent
-
-## Need Help?
-
-See:
-- **[SETUP_GUIDE.md](SETUP_GUIDE.md)** - Complete deployment guide
-- **[ARCHITECTURE.md](ARCHITECTURE.md)** - System architecture
+For complete documentation, see:
+- **[SETUP_GUIDE.md](SETUP_GUIDE.md)** - Step-by-step guide
+- **[ARCHITECTURE.md](ARCHITECTURE.md)** - Architecture details
 - **[DEPLOYMENT.md](DEPLOYMENT.md)** - Advanced options
+
+---
+
+**Status**: ✅ **Live and Running**
+**URL**: http://52.53.245.194:8100
+**Last Updated**: 2025-11-16

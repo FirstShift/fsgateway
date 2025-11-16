@@ -1,246 +1,307 @@
-# Remote Deployment Setup Guide
+# FSGW Documentation Server - Deployment Guide
 
-## Overview
+## Current Deployment Status
 
-This guide will help you deploy the FSGW documentation website to your remote VM where forecast_agent is running.
+**✅ DEPLOYED AND LIVE**
 
-## What You Need
+- **Public URL**: http://52.53.245.194:8100
+- **Server**: ubuntu@52.53.245.194 (ip-172-32-2-80)
+- **Status**: Running via PM2
+- **Last Deployed**: 2025-11-16
 
-Before starting, have these ready:
+## Access the Documentation
 
-1. ✅ **VM IP Address or Hostname** - The server IP (e.g., `192.168.1.100` or `myserver.example.com`)
-2. ✅ **SSH Username** - Your login username (e.g., `ubuntu`)
-3. ✅ **SSH Private Key File** - The permission/key file for authentication (e.g., `~/Downloads/my-key.pem`)
-4. ✅ **FirstShift Gateway Credentials** - Your FSGW username and password
-5. ✅ **SSH Port** - Usually `22` (default)
+**Direct Access (No tunnel needed):**
+Simply open in your browser: **http://52.53.245.194:8100**
 
-## Step-by-Step Deployment
+The server is publicly accessible. No SSH tunnel or VPN required.
 
-### Step 1: Run the Setup Script
+### Available Pages
 
-The setup script will:
-- Test your SSH connection
-- Check the VM system
-- Verify forecast_agent is running
-- Save your configuration securely
-- Create an automated deployment script
+- **Home**: http://52.53.245.194:8100/
+- **Entity Browser**: http://52.53.245.194:8100/docs/entities
+- **Entity Details**: http://52.53.245.194:8100/docs/entity/ops/auditTrail
+- **API Reference**: http://52.53.245.194:8100/docs/api
+- **Health Check**: http://52.53.245.194:8100/api/health
+- **Swagger UI**: http://52.53.245.194:8100/docs
+- **ReDoc**: http://52.53.245.194:8100/redoc
+
+## Redeployment
+
+To update the deployment with new code:
 
 ```bash
 cd /Users/al/Projects/firstshift/fsgateway
-./setup_deployment.sh
+./deployment/deploy_to_staging.sh
 ```
 
-**You'll be prompted for:**
+This script will:
+1. ✅ Test SSH connection
+2. ✅ Sync project files to the server
+3. ✅ Create/update .env file with credentials
+4. ✅ Install dependencies (uv, Python packages)
+5. ✅ Restart the PM2 service
+6. ✅ Verify the service is running
 
-1. **VM IP Address or Hostname**: Enter your server's IP or hostname
-   - Example: `192.168.1.100` or `myserver.com`
+## Server Configuration
 
-2. **VM Username**: Enter your SSH username (default: ubuntu)
-   - Just press Enter if it's `ubuntu`
+### Connection Details
+- **Host**: 52.53.245.194
+- **User**: ubuntu
+- **SSH Key**: `.secrets/dev-planlytx.pem`
+- **Port**: 22
+- **Project Path**: `/home/ubuntu/fsgateway/`
 
-3. **Path to SSH private key file**: Enter the full path to your .pem or key file
-   - Example: `~/Downloads/my-key.pem` or `/Users/al/.ssh/id_rsa`
+### Service Configuration
+- **Service Port**: 8100
+- **Process Manager**: PM2
+- **Service Name**: `fsgw-docs`
+- **Python**: 3.13.7 (via uv)
+- **Auto-restart**: Yes
 
-4. **SSH Port**: Enter the SSH port (default: 22)
-   - Just press Enter if it's the default port 22
+### Credentials
+The server uses the following FirstShift Gateway credentials (stored in `.env` on the server):
 
-5. **FSGW Username**: Your FirstShift Gateway username
+```env
+FSGW_GATEWAY_URL=https://dev-cloudgateway.firstshift.ai
+FSGW_TENANT_ID=7
+FSGW_USERNAME=dharma.palepu+7@firstshift.ai
+FSGW_PASSWORD=Plan1234
+```
 
-6. **FSGW Password**: Your FirstShift Gateway password (hidden as you type)
+## Management Commands
 
-### Step 2: Review the Connection Test
+All commands use SSH to manage the remote service.
 
-The script will:
-- ✅ Test SSH connection
-- ✅ Check VM system information
-- ✅ Verify forecast_agent is running
-- ✅ Check PM2 processes
-- ✅ Save configuration files
-
-If any step fails, the script will provide troubleshooting tips.
-
-### Step 3: Deploy to VM
-
-Once setup is complete, deploy with one command:
-
+### View Live Logs
 ```bash
-./deploy_remote.sh
+ssh -i .secrets/dev-planlytx.pem ubuntu@52.53.245.194 "pm2 logs fsgw-docs"
 ```
 
-This will:
-1. Copy all files to the VM
-2. Copy your credentials (.env file)
-3. Install dependencies (uv, PM2 if needed)
-4. Start the documentation service on port 8100
-5. Run health checks
-
-### Step 4: Access the Documentation
-
-**Option A: SSH Tunnel (Recommended)**
-
-Open an SSH tunnel to access the documentation locally:
-
+### Check Service Status
 ```bash
-# This command will be shown at the end of deployment
-ssh -i <your-key-path> -p <port> -L 8100:localhost:8100 <user>@<host>
+ssh -i .secrets/dev-planlytx.pem ubuntu@52.53.245.194 "pm2 status"
 ```
 
-Then open in your browser: **http://localhost:8100**
-
-**Option B: Configure Reverse Proxy**
-
-If you have nginx/caddy on the VM, you can expose it at a public URL (see DEPLOYMENT.md for config examples).
-
-## What Gets Created
-
-After running `setup_deployment.sh`, you'll have:
-
-- **`.deploy_config`** - SSH connection settings (gitignored)
-- **`.env.remote`** - FirstShift credentials (gitignored)
-- **`deploy_remote.sh`** - Automated deployment script (gitignored)
-
-**These files contain sensitive data and are automatically excluded from git.**
-
-## PM2 Services on Your VM
-
-After deployment:
-
-```
-PM2 Services:
-├── backend        (Port 5431) - forecast_agent backend
-├── frontend       (Port 3000) - forecast_agent frontend
-└── fsgw-docs      (Port 8100) - FSGW Documentation ← NEW
-```
-
-## Common Commands
-
-### View Documentation Logs
+### Restart Service
 ```bash
-ssh -i <key-path> -p <port> <user>@<host> 'pm2 logs fsgw-docs'
+ssh -i .secrets/dev-planlytx.pem ubuntu@52.53.245.194 "pm2 restart fsgw-docs"
 ```
 
-### Check PM2 Status
+### Stop Service
 ```bash
-ssh -i <key-path> -p <port> <user>@<host> 'pm2 status'
+ssh -i .secrets/dev-planlytx.pem ubuntu@52.53.245.194 "pm2 stop fsgw-docs"
 ```
 
-### Restart Documentation Service
+### Start Service (if stopped)
 ```bash
-ssh -i <key-path> -p <port> <user>@<host> 'pm2 restart fsgw-docs'
+ssh -i .secrets/dev-planlytx.pem ubuntu@52.53.245.194 "pm2 start fsgw-docs"
 ```
 
-### Stop Documentation Service
+### View Last 50 Lines of Logs
 ```bash
-ssh -i <key-path> -p <port> <user>@<host> 'pm2 stop fsgw-docs'
+ssh -i .secrets/dev-planlytx.pem ubuntu@52.53.245.194 "pm2 logs fsgw-docs --lines 50 --nostream"
 ```
 
-### Remove Documentation Service
+### Check Server Health
 ```bash
-ssh -i <key-path> -p <port> <user>@<host> 'pm2 delete fsgw-docs && pm2 save'
+curl http://52.53.245.194:8100/api/health
 ```
 
-### Update/Redeploy
+### Remote Shell Access
 ```bash
-# Just run the deployment script again
-./deploy_remote.sh
+ssh -i .secrets/dev-planlytx.pem ubuntu@52.53.245.194
+cd /home/ubuntu/fsgateway
 ```
+
+## PM2 Services on the VM
+
+The server runs multiple services via PM2:
+
+```
+┌────┬───────────────────┬──────────┬────────┬─────────┬──────────┐
+│ id │ name              │ mode     │ status │ restart │ uptime   │
+├────┼───────────────────┼──────────┼────────┼─────────┼──────────┤
+│ 2  │ backend           │ fork     │ online │ 233     │ 12D      │  ← Forecast Agent Backend
+│ 26 │ frontend          │ fork     │ online │ 0       │ 12D      │  ← Forecast Agent Frontend
+│ 27 │ fsgw-docs         │ fork     │ online │ 0       │ 15m      │  ← FSGW Documentation (NEW)
+└────┴───────────────────┴──────────┴────────┴─────────┴──────────┘
+```
+
+**Note**: The FSGW documentation service runs independently and does not affect the forecast_agent services.
 
 ## Troubleshooting
 
-### SSH Connection Fails
+### Service Not Responding
 
-**Problem**: "SSH connection failed" error during setup
-
-**Solutions**:
-1. Verify IP address is correct
-2. Check SSH key file path is correct
-3. Ensure key has correct permissions (600)
-4. Try manual connection:
+1. **Check if service is running:**
    ```bash
-   ssh -i <key-path> -p <port> <user>@<host>
+   ssh -i .secrets/dev-planlytx.pem ubuntu@52.53.245.194 "pm2 status | grep fsgw-docs"
    ```
 
-### Key Permission Issues
-
-**Problem**: "WARNING: UNPROTECTED PRIVATE KEY FILE"
-
-**Solution**: The script will auto-fix this, or run manually:
-```bash
-chmod 600 <path-to-key-file>
-```
-
-### Service Won't Start
-
-**Problem**: Deployment succeeds but health check fails
-
-**Solutions**:
-1. Check logs:
+2. **View recent errors:**
    ```bash
-   ssh -i <key-path> -p <port> <user>@<host> 'pm2 logs fsgw-docs'
-   ```
-2. Verify .env file has correct credentials
-3. Check if port 8100 is already in use:
-   ```bash
-   ssh -i <key-path> -p <port> <user>@<host> 'sudo lsof -i :8100'
+   ssh -i .secrets/dev-planlytx.pem ubuntu@52.53.245.194 "pm2 logs fsgw-docs --err --lines 30 --nostream"
    ```
 
-### Can't Access Documentation
-
-**Problem**: SSH tunnel established but can't access http://localhost:8100
-
-**Solutions**:
-1. Verify service is running:
+3. **Restart the service:**
    ```bash
-   ssh -i <key-path> -p <port> <user>@<host> 'pm2 status fsgw-docs'
+   ssh -i .secrets/dev-planlytx.pem ubuntu@52.53.245.194 "pm2 restart fsgw-docs"
    ```
-2. Check health endpoint on VM:
+
+### Connection Issues
+
+1. **Test direct HTTP access:**
    ```bash
-   ssh -i <key-path> -p <port> <user>@<host> 'curl http://localhost:8100/api/health'
+   curl -v http://52.53.245.194:8100/api/health
    ```
-3. Verify SSH tunnel is active (look for the ssh process)
 
-## Safety Notes
+2. **Test SSH connection:**
+   ```bash
+   ssh -i .secrets/dev-planlytx.pem ubuntu@52.53.245.194 "echo 'SSH OK'"
+   ```
 
-✅ **Completely Safe**: This deployment:
-- Uses a separate port (8100) from forecast_agent
-- Runs as an independent PM2 process
-- Has its own Python environment (uv)
+3. **Check AWS security group:**
+   - Ensure port 8100 is open for inbound traffic
+   - Check that port 22 (SSH) is accessible
+
+### Service Keeps Crashing
+
+1. **Check logs for Python errors:**
+   ```bash
+   ssh -i .secrets/dev-planlytx.pem ubuntu@52.53.245.194 "pm2 logs fsgw-docs --lines 100"
+   ```
+
+2. **Verify .env file exists:**
+   ```bash
+   ssh -i .secrets/dev-planlytx.pem ubuntu@52.53.245.194 "cat /home/ubuntu/fsgateway/.env"
+   ```
+
+3. **Check Python and uv installation:**
+   ```bash
+   ssh -i .secrets/dev-planlytx.pem ubuntu@52.53.245.194 "which uv && uv --version"
+   ```
+
+4. **Redeploy from scratch:**
+   ```bash
+   ./deployment/deploy_to_staging.sh
+   ```
+
+### Update Not Reflecting
+
+1. **Ensure deployment completed successfully:**
+   ```bash
+   ./deployment/deploy_to_staging.sh
+   ```
+
+2. **Hard restart PM2:**
+   ```bash
+   ssh -i .secrets/dev-planlytx.pem ubuntu@52.53.245.194 "pm2 delete fsgw-docs && cd /home/ubuntu/fsgateway && pm2 start bash --name fsgw-docs -- -c 'source ~/.cargo/env 2>/dev/null || true && uv run python -m fsgw.server.main --port 8100' && pm2 save"
+   ```
+
+3. **Clear browser cache** (Ctrl+Shift+R or Cmd+Shift+R)
+
+## Security & Safety
+
+### ✅ Safe Deployment
+- Runs on separate port (8100) from forecast_agent
+- Independent PM2 process
+- Separate Python environment (uv)
 - Can be removed without affecting forecast_agent
-- Read-only service with minimal resources
+- Read-only documentation service
 
-✅ **Forecast Agent Unaffected**: Your mission-critical forecast_agent services (`backend` on 5431, `frontend` on 3000) will continue running normally.
+### 🔒 Security Notes
+- Server is **publicly accessible** on port 8100
+- AWS security group allows inbound traffic
+- No authentication required (documentation is public)
+- Credentials stored in `.env` on server (not in git)
+- SSH key required for server management
 
-## Files Created on VM
+### 🚨 Production Considerations
+For production deployment, consider:
+- Adding HTTPS with a domain name
+- Implementing authentication/authorization
+- Setting up monitoring and alerting
+- Configuring log rotation
+- Adding rate limiting
+
+## Files on the Server
 
 ```
 /home/ubuntu/fsgateway/
-├── fsgw/                  # Python package
-├── .env                   # Credentials (from .env.remote)
-├── logs/                  # Log files
-│   ├── fsgw-docs.log
-│   └── fsgw-docs-error.log
+├── fsgw/                    # Python package (SDK + server)
+│   ├── client/              # HTTP client & auth
+│   ├── models/              # Pydantic models
+│   ├── cli/                 # CLI commands
+│   └── server/              # FastAPI documentation server
+│       ├── main.py          # Server entry point
+│       ├── templates/       # HTML templates
+│       └── static/          # CSS assets
+├── .venv/                   # Python virtual environment (uv)
+├── .env                     # FirstShift credentials
+├── pyproject.toml           # Python project config
+├── uv.lock                  # Dependency lock file
 └── [other files]
+```
+
+## Deployment Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    AWS EC2 Instance                         │
+│                  ip-172-32-2-80                             │
+│                  52.53.245.194                              │
+│                                                             │
+│  ┌──────────────────────────────────────────────────────┐  │
+│  │ PM2 Process Manager                                   │  │
+│  │                                                       │  │
+│  │  ┌────────────────┐  ┌────────────────┐  ┌────────┐ │  │
+│  │  │ forecast_agent │  │ forecast_agent │  │  FSGW  │ │  │
+│  │  │   backend      │  │   frontend     │  │  docs  │ │  │
+│  │  │   Port 5431    │  │   Port 3000    │  │  8100  │ │  │
+│  │  └────────────────┘  └────────────────┘  └────────┘ │  │
+│  └──────────────────────────────────────────────────────┘  │
+│                                                             │
+│  Network:                                                   │
+│  - Port 22   → SSH (management)                            │
+│  - Port 8100 → FSGW Documentation (public)                 │
+│  - Port 5431 → Forecast Agent API (internal)               │
+│  - Port 3000 → Forecast Agent UI (internal)                │
+└─────────────────────────────────────────────────────────────┘
+                         │
+                         │ HTTP on port 8100
+                         ▼
+              ┌────────────────────┐
+              │   Internet Users   │
+              │                    │
+              │  Browser requests  │
+              │  to 52.53.245.194  │
+              │  on port 8100      │
+              └────────────────────┘
 ```
 
 ## Quick Reference
 
 | Task | Command |
 |------|---------|
-| Setup & test connection | `./setup_deployment.sh` |
-| Deploy to VM | `./deploy_remote.sh` |
-| Access docs | `ssh -i <key> -L 8100:localhost:8100 <user>@<host>` |
-| View logs | `ssh <user>@<host> 'pm2 logs fsgw-docs'` |
-| Restart service | `ssh <user>@<host> 'pm2 restart fsgw-docs'` |
-| Remove service | `ssh <user>@<host> 'pm2 delete fsgw-docs'` |
+| **Access docs** | http://52.53.245.194:8100 |
+| **Redeploy** | `./deployment/deploy_to_staging.sh` |
+| **View logs** | `ssh -i .secrets/dev-planlytx.pem ubuntu@52.53.245.194 "pm2 logs fsgw-docs"` |
+| **Check status** | `ssh -i .secrets/dev-planlytx.pem ubuntu@52.53.245.194 "pm2 status"` |
+| **Restart service** | `ssh -i .secrets/dev-planlytx.pem ubuntu@52.53.245.194 "pm2 restart fsgw-docs"` |
+| **Stop service** | `ssh -i .secrets/dev-planlytx.pem ubuntu@52.53.245.194 "pm2 stop fsgw-docs"` |
+| **Health check** | `curl http://52.53.245.194:8100/api/health` |
+| **SSH access** | `ssh -i .secrets/dev-planlytx.pem ubuntu@52.53.245.194` |
 
-## Need Help?
+## Related Documentation
 
-1. Check PM2 logs for errors
-2. Verify .env credentials are correct
-3. Ensure forecast_agent is running properly first
-4. Test manual SSH connection
-5. Check if uv and PM2 are installed on VM
+- **[ARCHITECTURE.md](ARCHITECTURE.md)** - System architecture diagrams
+- **[DEPLOYMENT.md](DEPLOYMENT.md)** - Advanced deployment options
+- **[../.secrets/DEPLOYMENT_SUCCESS.md](../.secrets/DEPLOYMENT_SUCCESS.md)** - Current deployment details
+- **[../.secrets/deployment_config.sh](../.secrets/deployment_config.sh)** - Server configuration
 
 ---
 
-**Ready to deploy?** Start with `./setup_deployment.sh`!
+**Status**: ✅ **Deployed and Running**
+**URL**: http://52.53.245.194:8100
+**Last Updated**: 2025-11-16
