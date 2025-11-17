@@ -215,18 +215,36 @@ def query(
 
             else:  # table
                 if records:
-                    table = Table(title=f"Query Results: {entity}")
-
                     # Get headers from first record
                     headers = list(records[0].keys())
 
+                    # Check if table is too wide for terminal display
+                    if len(headers) > 10:
+                        console.print(
+                            f"[yellow]⚠ This entity has {len(headers)} fields which may not display well in table format.[/yellow]"
+                        )
+                        console.print(
+                            "[yellow]Consider using:[/yellow]\n"
+                            f"  • [cyan]--fields <field1,field2,...>[/cyan] to select specific columns\n"
+                            f"  • [cyan]--output json[/cyan] to see all data in JSON format\n"
+                            f"  • [cyan]--output csv[/cyan] to export as CSV\n"
+                        )
+
+                        # Show only first 8 columns plus last 2 in table
+                        display_headers = headers[:8] + headers[-2:]
+                        console.print(f"[dim]Showing first 8 and last 2 columns ({len(display_headers)}/{len(headers)})...[/dim]\n")
+                    else:
+                        display_headers = headers
+
+                    table = Table(title=f"Query Results: {entity}")
+
                     # Add columns
-                    for header in headers:
+                    for header in display_headers:
                         table.add_column(header, style="cyan", overflow="fold")
 
                     # Add rows
                     for record in records:
-                        table.add_row(*[str(record.get(h, "")) for h in headers])
+                        table.add_row(*[str(record.get(h, "")) for h in display_headers])
 
                     console.print(table)
 
