@@ -158,59 +158,81 @@ def query(
     """Query data from a specific entity."""
 
     async def _query() -> None:
-        # Parse filters
-        filters_dict: dict[str, Any] = {}
+        from fsgw.models.query import QueryRequest
+
+        # Build query request
+        query_req = QueryRequest()
+
+        # Add filters
         if filter:
             for f in filter:
                 if "=" in f:
                     key, value = f.split("=", 1)
-                    filters_dict[key] = value
+                    query_req.add_filter(key, "=", value)
 
-        # Parse fields
-        fields_list = fields.split(",") if fields else None
+        # Add sorting
+        if sort_by:
+            direction = "DESC" if sort_order.lower() == "desc" else "ASC"
+            query_req.add_sort(sort_by, direction)
+
+        # Add pagination
+        query_req.paginate(page=page, page_size=limit)
+
+        # Add field selection
+        if fields:
+            fields_list = [f.strip() for f in fields.split(",")]
+            query_req.select_fields(*fields_list)
 
         async with get_client() as client:
-            response = await client.query(
-                entity=entity,
-                filters=filters_dict if filters_dict else None,
-                sort_by=sort_by,
-                sort_order=sort_order,
-                page=page,
-                limit=limit,
-                fields=fields_list,
-            )
+            # Execute query
+            response = await client.query(entity, query_req)
 
-            if not response.success:
-                console.print(f"[red]Error: {response.error}[/red]")
-                raise typer.Exit(1)
+            # Get records
+            records = response.get_records()
 
-            data = response.data
+            # Check for empty results
+            if not records:
+                console.print(f"[yellow]No records found for {entity}[/yellow]")
+                return
 
+            # Output results
             if output == "json":
-                console.print(json.dumps(data.model_dump(), indent=2))
-            elif output == "csv":
-                if data.items:
-                    # Print header
-                    headers = list(data.items[0].keys())
-                    console.print(",".join(headers))
-                    # Print rows
-                    for item in data.items:
-                        console.print(",".join(str(item.get(h, "")) for h in headers))
-            else:  # table
-                if data.items:
-                    table = Table(title=f"Query Results: {entity}")
-                    headers = list(data.items[0].keys())
-                    for header in headers:
-                        table.add_column(header, style="cyan")
+                # Convert records to JSON
+                console.print(json.dumps(records, indent=2))
 
-                    for item in data.items:
-                        table.add_row(*[str(item.get(h, "")) for h in headers])
+            elif output == "csv":
+                # CSV output
+                if records:
+                    # Get headers from first record
+                    headers = list(records[0].keys())
+
+                    # Print header row
+                    console.print(",".join(headers))
+
+                    # Print data rows
+                    for record in records:
+                        console.print(",".join(str(record.get(h, "")) for h in headers))
+
+            else:  # table
+                if records:
+                    table = Table(title=f"Query Results: {entity}")
+
+                    # Get headers from first record
+                    headers = list(records[0].keys())
+
+                    # Add columns
+                    for header in headers:
+                        table.add_column(header, style="cyan", overflow="fold")
+
+                    # Add rows
+                    for record in records:
+                        table.add_row(*[str(record.get(h, "")) for h in headers])
 
                     console.print(table)
 
+                # Show count
                 console.print(
-                    f"\n[green]Page {data.page} of {data.total_pages}[/green] "
-                    f"(Total: {data.total} records)"
+                    f"\n[green]Retrieved {response.count} records[/green]"
                 )
 
     asyncio.run(_query())
@@ -768,20 +790,25 @@ async def _run_query(api_url: str) -> None:
     """Helper to run query command."""
     async with get_client() as client:
         try:
-            from fsgw import QueryRequest
-            query = QueryRequest().limit(5)
+            from fsgw.models.query import QueryRequest
+            query = QueryRequest().paginate(page=1, page_size=5)
             results = await client.query(api_url, query)
 
-            console.print(f"\n[green]Query results for {api_url}:[/green]")
-            console.print(f"[yellow]Showing first 5 records[/yellow]\n")
+            records = results.get_records()
 
-            if results.results:
-                for i, row in enumerate(results.results, 1):
+            console.print(f"\n[green]Query results for {api_url}:[/green]")
+            console.print(f"[yellow]Showing first 5 records (total: {results.count})[/yellow]\n")
+
+            if records:
+                for i, row in enumerate(records, 1):
                     console.print(f"[cyan]Record {i}:[/cyan]")
-                    for key, value in list(row.items())[:5]:
+                    items = list(row.items())[:5]
+                    total_fields = len(row)
+
+                    for key, value in items:
                         console.print(f"  {key}: {value}")
-                    if len(row) > 5:
-                        console.print(f"  ... and {len(row) - 5} more fields")
+                    if total_fields > 5:
+                        console.print(f"  ... and {total_fields - 5} more fields")
                     console.print()
             else:
                 console.print("[yellow]No results found[/yellow]")

@@ -405,7 +405,7 @@ class FSGWClient(BaseClient):
 
         # Convert to QueryResponse
         raw_data = api_response.get_data()
-        return QueryResponse(results=raw_data, total=len(raw_data))
+        return QueryResponse(data=raw_data)
 
     async def query_all(
         self, api_url: str, page_size: int = 1000, max_results: int | None = None
