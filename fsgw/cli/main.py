@@ -248,10 +248,21 @@ def query(
 
                     console.print(table)
 
-                # Show count
-                console.print(
-                    f"\n[green]Retrieved {response.count} records[/green]"
-                )
+                # Show count with pagination info
+                count_msg = f"\n[green]Retrieved {response.count} records[/green]"
+
+                # If we got exactly the limit, there might be more records
+                if response.count == limit:
+                    count_msg += f" [yellow](showing first {limit})[/yellow]"
+                    console.print(count_msg)
+                    console.print(
+                        "[yellow]There may be more records. To see more:[/yellow]\n"
+                        f"  • [cyan]--limit <n>[/cyan] to increase records per page (e.g., --limit 50)\n"
+                        f"  • [cyan]--page <n>[/cyan] to navigate pages (e.g., --page 2)\n"
+                        f"  • [cyan]--output json > file.json[/cyan] to export all results\n"
+                    )
+                else:
+                    console.print(count_msg)
 
     asyncio.run(_query())
 
